@@ -1,0 +1,120 @@
+using SpecialFunctions: besselj0, besselj1, bessely0, bessely1
+using QuadGK: quadgk
+
+"""
+    _ics_integrand(s, r̃, t̃)
+
+Computes the integrand of the infinite cylindrical source model.
+"""
+function _ics_integrand(s::T, r̃::T, t̃::T) where {T<:AbstractFloat}
+    if s < 1e-12
+        return zero(T)
+    end
+    # Pre-calculate Bessel terms to keep the expression readable
+    j0_rs = besselj0(r̃ * s)
+    y1_s  = bessely1(s)
+    y0_rs = bessely0(r̃ * s)
+    j1_s  = besselj1(s)
+    
+    return ((exp(-s^2 * t̃) - 1) * (j0_rs * y1_s - y0_rs * j1_s)) / (s^2 * (j1_s^2 + y1_s^2))
+end
+
+"""
+    _ics(t, r, rc, ks, Cs)
+
+Kernel function for the infinite cylindrical source model based on Carlsaw and Jaeger (1959). The 
+response function is based on an impulse of 1 W/m.
+"""
+function _ics(t::T, r::T, rc::T, ks::T, Cs::T) where {T<:AbstractFloat}
+    # Define parameters
+    r̃ = r / rc
+    t̃ = (t * ks) / (Cs * rc^2)
+    
+    # Perform numerical integration. T(1e-8) ensures the lower bound matches input precision.
+    integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), T(1e-8), T(Inf), rtol = T(1e-6))
+    
+    return integral / (T(π)^2 * ks)
+end
+
+"""
+    ics(t, r, rc, ks, Cs)
+
+Computes the infinite cylindre source (ICS) model based on Carlsaw and Jaeger (1959). The output is
+a g-function that requires a heat load per unit of borehole length [W/m] to provide the borehole 
+wall temperature.
+# Arguments
+    - `t`: Time value or vector [s]
+    - `r`: Radius at which to computed (typically the borehole radius) [m]
+    - `rc`: Radius of the cylinder [m]
+    - `ks`: Ground thermal conductivity [W/mK]
+    - `Cs`: Ground volumetric specific heat [J/m³K]
+# Output
+    - `g`: A g-function corresponding to the borehole wall temperature of the borehole [°Cm/W]
+# Reference:
+    - Carslaw, H. S., & Jaeger, J. C. (1959). Conduction of heat in solids. Oxford: Clarendon Press,
+        1959, 2nd Ed.
+# Example
+    ics(60:60:3600, 3.0, 2e6, 0.076, 0.076)
+"""
+function ics(t::Real, r::Real, rc::Real, ks::Real, Cs::Real)
+    # Method for 1 time step and 1 radius
+    T = float(promote_type(typeof(t), typeof(r), typeof(rc), typeof(ks), typeof(Cs)))
+    return _ics(T(t), T(r), T(rc), T(ks), T(Cs))
+end
+function ics(t::AbstractVector{<:Real}, r::Real, rc::Real, ks::Real, Cs::Real)
+    # Method for multiple time steps and 1 radius.
+    # Check type
+    T = float(promote_type(eltype(t), typeof(r), typeof(rc), typeof(ks), typeof(Cs)))
+    t_T  = convert(Vector{T}, t)
+    
+    # Preallocate and ICS
+    g = similar(t_T)
+    @inbounds @simd for i in eachindex(t_T)
+        g[i] = _ics(t_T[i], T(r), T(rc), T(ks), T(Cs))
+    end
+    return g
+end
+function ics(t::Real, r::AbstractVector{<:Real}, rc::Real, ks::Real, Cs::Real)
+    # Method for 1 time step and multiple radius.
+    T = float(promote_type(typeof(t), eltype(r), typeof(rc), typeof(ks), typeof(Cs)))
+    g = similar(r)
+    @inbounds @simd for i in eachindex(r)
+        g[i] = _ics(T(t), T(r[i]), T(rc), T(ks), T(Cs))
+    end
+    return g
+end
+function ics(t::AbstractVector{<:Real}, r::AbstractVector{<:Real}, rc::Real, ks::Real, Cs::Real)
+    # Method for multiple time steps and multiple radius in a 2D array. Columns correspond to
+    # different radius and rows to different time steps.
+    T = float(promote_type(eltype(t), eltype(r), typeof(rc), typeof(ks), typeof(Cs)))
+    t_T  = convert(Vector{T}, t)
+    g = Matrix{T}(undef, length(t_T), length(r))
+    @inbounds @simd for i in eachindex(r)
+        for j in eachindex(t_T)
+            g[j, i] = _ics(t_T[j], T(r[i]), T(rc), T(ks), T(Cs))
+        end
+    end
+    return g
+end
+function ics(t::AbstractVector{<:Real}, r::AbstractArray{<:Real}, rc::Real, ks::Real, Cs::Real)
+    # Method for multiple time steps and multiple radius in a 3D array.
+    # The dimensions of the 3D array are (`t`, `x`, `y`).
+    # Check type
+    T = float(promote_type(eltype(t), eltype(r), typeof(rc), typeof(ks), typeof(Cs)))
+    # Convert time vector to the right type
+    t_T  = convert(Vector{T}, t)
+    nt = length(t_T)                # Number of element in the time vector
+    # Find unique radius
+    nb = size(r, 1)                 # Number of boreholes
+    rᵥ = reshape(r, nb * nb)        # Vector of the borefield radius (nb x 1) [m]
+    rᵤ = unique(rᵥ)                 # Unique values of the borefield radius (nbᵤ x 1) [m]
+    rᵢ = indexin(rᵥ, rᵤ)            # Indices of the unique radius values (nb*nb x 1) [m]
+    # Compute a 2D matrix of g-function for unique radius
+    g2D = ics(t_T, rᵤ, T(rc), T(ks), T(Cs))
+    # Fill a 3D matrix of g-function for all radius
+    g3D = zeros(nt, nb, nb)
+    for i in 1:nt
+        g3D[i, :, :] = reshape(g2D[i, rᵢ], (1, nb, nb)) # Fill a 3D matrix of g-functions
+    end
+    return g3D
+end

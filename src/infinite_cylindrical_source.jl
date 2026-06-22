@@ -24,7 +24,7 @@ wall temperature.
     - Carslaw, H. S., & Jaeger, J. C. (1959). Conduction of heat in solids. Oxford: Clarendon Press,
         1959, 2nd Ed.
 # Example
-    g = ics(60:60:3600, 3.0, 2e6, 0.076, 0.076)
+    g = ics(60:60:3600, 0.076, 0.076, 3.0, 2e6)
 """
 function ics(t::Real, r::Real, rc::Real, ks::Real, Cs::Real)
     # Method for 1 time step and 1 radius
@@ -115,16 +115,35 @@ end
 """
     _ics(t, r, rc, ks, Cs)
 
-Kernel function for the infinite cylindrical source model based on Carlsaw and Jaeger (1959). The 
+Kernel function for the infinite cylindrical source model based on Carlsaw and Jaeger (1959). The
 response function is based on an impulse of 1 W/m.
 """
 function _ics(t::T, r::T, rc::T, ks::T, Cs::T) where {T<:AbstractFloat}
-    # Define parameters
     r̃ = r / rc
     t̃ = (t * ks) / (Cs * rc^2)
-    
-    # Perform numerical integration. T(1e-8) ensures the lower bound matches input precision.
-    integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), T(1e-8), T(Inf), rtol = T(1e-6))
-    
+
+    # For r >> rc the cylinder is indistinguishable from a line source: ICS → ILS
+    r̃ > 50 && return _ils(t, r, ks, Cs)
+
+    # Upper integration limit
+    s_upper = sqrt(T(50) / t̃)
+
+    if r̃ > T(1.5)
+        # The integrand oscillates at spatial frequency r̃/π (from besselj0/bessely0 at r̃·s).
+        half_period = T(π) / r̃
+        n_breaks = min(floor(Int, s_upper / half_period), 500)
+        pts = Vector{T}(undef, n_breaks + 2)
+        pts[1] = T(1e-8)
+        for i in 1:n_breaks
+            pts[i + 1] = i * half_period
+        end
+        pts[end] = s_upper
+        integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), pts..., rtol = T(1e-6))
+    else
+        # r ≈ rc: integrand is smooth (Wronskian identity makes oscillations cancel exactly
+        # at r̃ = 1). Standard integration with Inf is fast and well-conditioned.
+        integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), T(1e-8), T(Inf), rtol = T(1e-6))
+    end
+
     return integral / (T(π)^2 * ks)
 end

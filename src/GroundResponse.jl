@@ -79,7 +79,7 @@ include("moving_finite_line_source.jl")     # mfls — Guo et al. (2020)
 include("g_short_term.jl")                  # gST_ANN — Pasquier et al. (2018)
 
 include("spatial_superposition.jl")
-include("utils.jl")
+include("borefield.jl")
 
 # High-level interface
 """
@@ -93,7 +93,7 @@ Compute the g-function for either one borehole or a borefield using the given gr
 # Arguments
     - `t`: Time value or vector [s]
     - `rb`: Borehole radius [m]
-    - `xy`: Borehole coordinates (nb × 2) [m] — can be built with `borefield_xy`
+    - `xy`: Borehole coordinates (nb × 2) [m] — can be built with `borefield(:rectangle, ...)`
     - `m`: Ground model (e.g. `FLSModel(150, 4, 3.0, 2e6)`)
 # Output
     - `g`: g-function for an impulse of 1 W/m [°Cm/W]
@@ -129,7 +129,9 @@ export ground_response
 # Spatial superposition
 export bloc_matrix, successive_flux
 
-# Utilities
-export borefield_radius, borefield_xy
+# Borefield layouts
+export borefield_radius
+export borefield, borefield_rectangle, borefield_line, borefield_circle
+export borefield_L, borefield_U, borefield_open_rectangle
 
 end

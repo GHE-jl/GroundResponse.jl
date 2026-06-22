@@ -14,7 +14,7 @@ wall temperature.
             to different radii and rows to different time steps.
         - If `r` is a 2D array, the output will be a 3D array of g-function with dimensions
             corresponding to (time, x, y) coordinates of the borefield. The radius matrix can
-            be computed with `borefield_radius()` from utils.jl.
+            be computed with `borefield_radius()` from borefield.jl.
     - `H`: Borehole depth [m]
     - `D`: Buried depth [m]
     - `ks`: Ground thermal conductivity [W/mK]

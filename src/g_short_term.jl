@@ -1,7 +1,3 @@
-using Interpolations
-using PCHIPInterpolation
-using Plots
-
 # TODO : - optimize the code
 #        - modify according to Gabriel's comment
 
@@ -46,7 +42,6 @@ transfer function (g_EWT).
         near-instant construction of short-term g-functions. Applied Thermal Engineering.
         https://www.sciencedirect.com/science/article/abs/pii/S1359431118305921 
 """
-
 function gST_ANN(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
     #= 
     DESCRIPTION OF INPUT VARIABLES:

@@ -16,7 +16,7 @@ boreholes (Type II). The g-function generated is for an impulse of 1 W/m.
     - `t`: Time vector (nt x 1) [s]
     - `rb`: Borehole radius [m]
     - `xy`: Matrix of borehole coordinates where the line source is at (0,0) (nb x 2) [m]
-        - Can be computed with `borefield_xy()` from utils.jl.
+        - Can be computed with `borefield(:rectangle, ...)` from borefield.jl.
     - `m`: Ground model parameters (e.g. `FLSModel(150, 4, 3.0, 2e6)`)
 # Output
     - `g`: g-function of the borefield spatial superposition [-]
@@ -124,7 +124,7 @@ boreholes (Type II). The g-function generated is for an impulse of 1 W/m.
     - `t`: Time vector (nt x 1) [s]
     - `rb`: Borehole radius [m]
     - `xy`: Matrix of borehole coordinates where the line source is at (0,0) (nb x 2) [m]
-        - Can be computed with `borefield_xy()` from utils.jl.
+        - Can be computed with `borefield(:rectangle, ...)` from borefield.jl.
     - `m`: Ground model parameters (e.g. `FLSModel(150, 4, 3.0, 2e6)`)
 # Output
     - `g`: g-function of the borefield spatial superposition [-]

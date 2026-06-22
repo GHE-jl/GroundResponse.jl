@@ -30,9 +30,6 @@ groundwater flow is considered to be on the positive x-axis.
     - Guo, Y., Hu, X., Banks, J., & Liu, W. V. (2020). Considering buried depth in the moving
         finite line source model for vertical borehole heat exchangers—A new solution. Energy and
         Buildings, 214, 109859. https://doi.org/10.1016/j.enbuild.2020.109859
-# Example
-    mfls(60:60:3600, [0, 0], 150, 0.076, 4, 3.0, 2e6, 4.2e6, 1e-6)  # At borehole wall
-    mfls(60:60:3600, [5, 0], 150, 0.076, 4, 3.0, 2e6, 4.2e6, 1e-6)  # 5 m from the line source
 """
 function mfls(t::Real, xy::AbstractVector{<:Real}, H::Real, rb::Real, D::Real, ks::Real,
     Cs::Real, Cf::Real, vD::Real)

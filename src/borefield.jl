@@ -184,13 +184,6 @@ arguments are forwarded unchanged to the corresponding layout function.
 | `:L`               | `borefield_L`                | `(n1, n2, B)` or `(n1, n2, B1, B2)` |
 | `:U`               | `borefield_U`                | `(nx, ny, B)` or `(nx, ny, Bx, By)` |
 | `:open_rectangle`  | `borefield_open_rectangle`   | `(nx, ny, B)` or `(nx, ny, Bx, By)` |
-
-# Example
-```julia
-xy = borefield(:rectangle, 5, 5, 5.0)   # 5×5 grid, 5 m spacing
-xy = borefield(:circle, 8, 10.0)        # 8 boreholes on a circle of radius 10 m
-xy = borefield(:L, 4, 3, 5.0)           # L-shape, 4 boreholes × 3 boreholes
-```
 """
 function borefield(shape::Symbol, args...)
     shape === :rectangle      && return borefield_rectangle(args...)

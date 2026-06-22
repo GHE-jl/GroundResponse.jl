@@ -6,8 +6,6 @@ evaluates uninterpolated thermal responses at arbitrary time steps and radii, le
 sampling, interpolation, and system-level modelling to downstream packages such as
 [GroundHeatExchanger.jl](https://github.com/GeothermalJL/GroundHeatExchanger.jl).
 
----
-
 ## Models
 
 Five analytical ground response models are implemented, each as a raw function and as an
@@ -31,8 +29,6 @@ switches between the circumferential-average form (inside/at the borehole wall, 
 directional form (outside, `r > rb`). Groundwater flow is assumed along the positive x-axis.
 These models require `vD > 0`; use a small value (e.g. `1e-12`) for near-impervious conditions,
 or use the corresponding non-moving model instead.
-
----
 
 ## Multiple Dispatch
 
@@ -66,8 +62,6 @@ For the matrix overloads, `xy` is the `nb×2` matrix of borehole coordinates. Th
 internally computes pairwise displacements; the diagonal (self-response) uses `[0, 0]`, which
 triggers the inside-borehole branch.
 
----
-
 ## High-Level Interface
 
 `ground_response` is a single entry point that dispatches over model type and borefield size:
@@ -100,8 +94,6 @@ m_mfls = MFLSModel(150.0, rb, 4.0, ks, Cs, Cf, vD)
 g = ground_response(t, rb, xy, m_mfls)
 ```
 
----
-
 ## Spatial Superposition
 
 Two methods compute the borefield g-function from single-borehole responses. Both accept either a
@@ -122,8 +114,6 @@ r3D = borefield_radius(xy, rb)[1]                 # nb×nb radius matrix
 g3D = fls(t, r3D, 150.0, 4.0, ks, Cs)            # nt × nb × nb
 g   = successive_flux(g3D)
 ```
-
----
 
 ## Borefield Layout Functions
 
@@ -148,8 +138,6 @@ All functions return an `nb×2` matrix of borehole coordinates `[x y]`.
 `borefield_radius(xy, rb)` returns `(r, rᵥ, rᵤ, rᵢ, θ, nb)`: the pairwise radius matrix,
 its flattened vector, unique values, index map, azimuth angles, and borehole count.
 
----
-
 ## Extending with Custom Models
 
 Subtype `AbstractGroundModel` and add `successive_flux` / `bloc_matrix` overloads:
@@ -173,23 +161,22 @@ end
 
 The new model is then usable with `ground_response` without any changes to the core package.
 
----
-
 ## Scripts
 
-Example scripts are in [`script/`](script/). Run them from the package root after activating the
-project environment (`julia --project`):
+Run from the package root with `julia --project=script/ script/<name>.jl`.
+First-time setup:
+```
+julia --project=script/ -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+```
 
 | Script | Description |
 |--------|-------------|
-| [`script_ground_models.jl`](script/script_ground_models.jl) | Single-borehole g-function comparison: ILS, ICS, FLS, MILS, MFLS on a log-spaced time axis |
-| [`script_spatial_superposition.jl`](script/script_spatial_superposition.jl) | Bloc matrix vs successive flux agreement (3×3 FLS); g-function scaling from 1×1 to 5×5 |
-| [`script_borefield_layouts.jl`](script/script_borefield_layouts.jl) | Subplot figure of all six layout configurations (~50 boreholes each) |
-| [`script_ground_response.jl`](script/script_ground_response.jl) | `ground_response` dispatch across all models; `@btime` benchmark for single borehole and borefield sizes |
-| [`script_groundwater_advection.jl`](script/script_groundwater_advection.jl) | 2D spatial heatmap comparing FLS, MILS, and MFLS at t = 10 yr; asymmetric plume visible for moving models |
-| [`script_short-term.jl`](script/script_short-term.jl) | Short-term ANN model (⚠️ not yet fully integrated) |
-
----
+| `script_ground_models.jl` | Single-borehole g-function comparison: ILS, ICS, FLS, MILS, MFLS on a log-spaced time axis |
+| `script_spatial_superposition.jl` | Bloc matrix vs successive flux agreement (3×3 FLS); g-function scaling from 1×1 to 5×5 |
+| `script_borefield_layouts.jl` | Subplot figure of all six layout configurations (~50 boreholes each) |
+| `script_ground_response.jl` | `ground_response` dispatch across all models; `@btime` benchmark for single borehole and borefield sizes |
+| `script_groundwater_advection.jl` | 2D spatial heatmap comparing FLS, MILS, and MFLS at t = 10 yr; asymmetric plume visible for moving models |
+| `script_short_term.jl` | Short-term ANN model (⚠️ not yet fully integrated) |
 
 ## Installation
 
@@ -205,8 +192,6 @@ Or in the Julia REPL package manager (`]`):
 ```
 pkg> add https://github.com/GeothermalJL/GroundResponse.jl
 ```
-
----
 
 ## Dependencies
 
@@ -226,8 +211,6 @@ pkg> add https://github.com/GeothermalJL/GroundResponse.jl
 | [CairoMakie.jl](https://github.com/MakieOrg/Makie.jl) | All visualisation scripts |
 | [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl) | `script_ground_response.jl` |
 
----
-
 ## References
 
 ### Ground Thermal Response Models
@@ -243,9 +226,3 @@ pkg> add https://github.com/GeothermalJL/GroundResponse.jl
 
 - Dusseault, B., Pasquier, P., & Marcotte, D. (2018). A block matrix formulation for efficient g-function construction. *Renewable Energy*, 121, 249–260. https://doi.org/10.1016/j.renene.2017.12.092
 - Nguyen, A., & Pasquier, P. (2021). A successive flux estimation method for rapid g-function construction of small to large-scale ground heat exchanger. *Renewable Energy*, 165, 359–368. https://doi.org/10.1016/j.renene.2020.10.074
-
----
-
-## License
-
-See [LICENSE.txt](LICENSE.txt).

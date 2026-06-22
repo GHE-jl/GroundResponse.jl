@@ -16,7 +16,7 @@ the model; the g-function backends are defined separately and will be called by 
 abstract type AbstractGroundModel end
 
 """
-Infinite line source (Ingersol, 1954)
+Infinite line source (Ingersol, 1948).
 Parameters `ks` [W/mK], `Cs` [J/m³K].
 """
 struct ILSModel <: AbstractGroundModel

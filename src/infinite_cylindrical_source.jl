@@ -4,12 +4,12 @@ using QuadGK: quadgk
 """
     ics(t, r, rc, ks, Cs)
 
-Computes the infinite cylindre source (ICS) model based on Carlsaw and Jaeger (1959). The output is
-a g-function that requires a heat load per unit of borehole length [W/m] to provide the borehole 
+Computes the infinite cylindrical source (ICS) model based on Carslaw and Jaeger (1959). The output
+is a g-function that requires a heat load per unit of borehole length [W/m] to provide the borehole
 wall temperature.
 # Arguments
     - `t`: Time value or vector [s]
-    - `r`: Radius at which to computed (typically the borehole radius) [m]
+    - `r`: Radius at which to compute (typically the borehole radius) [m]
         - If `r` is a vector, the output will be a matrix of g-function with columns corresponding
             to different radius and rows to different time steps.
         - If `r` is a 2D array, the output will be a 3D array of g-function with dimensions
@@ -20,11 +20,9 @@ wall temperature.
     - `Cs`: Ground volumetric specific heat [J/m³K]
 # Output
     - `g`: A g-function corresponding to the borehole wall temperature of the borehole [°Cm/W]
-# Reference:
-    - Carslaw, H. S., & Jaeger, J. C. (1959). Conduction of heat in solids. Oxford: Clarendon Press,
-        1959, 2nd Ed.
-# Example
-    g = ics(60:60:3600, 0.076, 0.076, 3.0, 2e6)
+# Reference
+    - Carslaw, H. S., & Jaeger, J. C. (1959). Conduction of Heat in Solids (2nd ed.).
+        Oxford: Clarendon Press.
 """
 function ics(t::Real, r::Real, rc::Real, ks::Real, Cs::Real)
     # Method for 1 time step and 1 radius
@@ -115,7 +113,7 @@ end
 """
     _ics(t, r, rc, ks, Cs)
 
-Kernel function for the infinite cylindrical source model based on Carlsaw and Jaeger (1959). The
+Kernel function for the infinite cylindrical source model based on Carslaw and Jaeger (1959). The
 response function is based on an impulse of 1 W/m.
 """
 function _ics(t::T, r::T, rc::T, ks::T, Cs::T) where {T<:AbstractFloat}

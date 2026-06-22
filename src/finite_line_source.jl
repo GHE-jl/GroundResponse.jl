@@ -25,8 +25,6 @@ wall temperature.
     - Claesson, J., & Javed, S. (2011). An analytical method to calculate borehole fluid
         temperatures for time-scales from minutes to decades. ASHRAE Transactions, 117(PART 2),
         279–288.
-# Example
-    g = fls(60:60:3600, 0.076, 150, 4.0, 3.0, 2e6)
 """
 function fls(t::Real, r::Real, H::Real, D::Real, ks::Real, Cs::Real)
     T = float(promote_type(typeof(t), typeof(r), typeof(H), typeof(D), typeof(ks), typeof(Cs)))

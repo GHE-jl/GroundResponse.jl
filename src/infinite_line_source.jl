@@ -3,7 +3,7 @@ using SpecialFunctions: expinti
 """
     ils(t, r, ks, Cs)
 
-Compute the infinite line source (ILS) model based on Ingersol (1954). The output is a g-function
+Compute the infinite line source (ILS) model based on Ingersol (1948). The output is a g-function
 that requires a heat load per unit of borehole length [W/m] to provide the borehole wall
 temperature.
 # Arguments
@@ -19,10 +19,8 @@ temperature.
 # Output
     - `g`: A g-function corresponding to the borehole wall temperature of the borehole [°Cm/W]
 # Reference
-    - Ingersol, L. R. (1948). Theory of the ground pipe heat source for the heat pump. 
+    - Ingersol, L. R. (1948). Theory of the ground pipe heat source for the heat pump.
         ASHVE Journal Section, Heating, Piping and Air Conditioning.
-# Example
-    g = ils(60:60:3600, 3.0, 2e6, 0.076)
 """
 function ils(t::Real, r::Real, ks::Real, Cs::Real)
     # Method for 1 time step and 1 radius

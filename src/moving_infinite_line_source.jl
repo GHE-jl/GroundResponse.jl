@@ -26,8 +26,6 @@ borehole wall temperature. The groundwater flow is in the positive x-direction.
 # Reference
     - Pasquier, P., & Lamarche, L. (2022). Analytic expressions for the moving infinite line source
         model. Geothermics, 103, 102413. https://doi.org/10.1016/j.geothermics.2022.102413
-# Example
-    mils(60:60:3600, [5.0, 0.0], 0.076, 3.0, 2e6, 4.2e6, 1e-6)  # Directional at (5 m, 0 m)
 """
 function mils(t::Real, xy::AbstractVector{<:Real}, rb::Real, ks::Real, Cs::Real, Cf::Real,
     vD::Real)

@@ -43,7 +43,7 @@ for (nx, ny) in bfield_sizes
     xy = borefield(:rectangle, nx, ny, B)
     nb = size(xy, 1)
     print("  $(nx)×$(ny) (nb = $(nb)): ")
-    @btime ground_response(t, rb, xy, m_fls)
+    @btime ground_response($t, $rb, $xy, $m_fls)
 end
 
 # Figure: g-functions for different borefield sizes

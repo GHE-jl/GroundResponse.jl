@@ -72,7 +72,7 @@ function gST_ANN(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
 
     # out_of_range is a boolean value (true if at least one of the parameters is out of 
     # range, and false otherwise), p is an array containing the 8 parameters used to compute
-    # the transfer function 
+    # the transfer function
     p = input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
 
     # 2.0 - Initialization of variables
@@ -107,7 +107,6 @@ function gST_ANN(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
     # Only including values associated with time smaller than the last element of ts
     t_included = t[t.<=last(ts)]
     gST = itp.(t_included)
-
 
     # 5.0 - Assembly of the Entering Water Temperature variables 
 
@@ -591,7 +590,6 @@ function step1(x, constants)
     y .*= constants.gain
     y .+= constants.ymin
     return y
-
 end
 
 """
@@ -614,8 +612,4 @@ function step2(y, constants)
     x ./= constants.gain
     x .+= constants.xoffset
     return x
-
 end
-
-
-

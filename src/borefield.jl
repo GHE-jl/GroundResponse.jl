@@ -28,10 +28,7 @@ function borefield_radius(xy::AbstractArray{<:Real}, rb::Real)
     return r, rᵥ, rᵤ, rᵢ, θ, nb
 end
 
-# ---------------------------------------------------------------------------
 # Borefield layout generators
-# ---------------------------------------------------------------------------
-
 """
     borefield_rectangle(nx, ny, B)
     borefield_rectangle(nx, ny, Bx, By)
@@ -172,10 +169,7 @@ function borefield_open_rectangle(nx::Integer, ny::Integer, Bx::Real, By::Real)
     return vcat(bottom, top, left, right)
 end
 
-# ---------------------------------------------------------------------------
 # Unified entry point
-# ---------------------------------------------------------------------------
-
 """
     borefield(shape, args...)
 

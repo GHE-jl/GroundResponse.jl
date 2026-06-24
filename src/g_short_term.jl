@@ -1,8 +1,11 @@
-# TODO : - optimize the code
-#        - modify according to Gabriel's comment
+using Interpolations
+using PCHIPInterpolation
 
-# struct containing all the element used to adjust the variable during the simulation of 
-# the artificial neural network
+
+# TODO : - optimize the code
+
+# struct containing all the element used to adjust the variable during the simulation of the 
+# artificial neural network
 struct var_adjustment
     xoffset::Vector{Float64}
     gain::Vector{Float64}
@@ -10,14 +13,13 @@ struct var_adjustment
 end
 
 """
-    gST_ANN(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
+    g_short_term(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
 
-The gST_ANN (the short-term transfer function computed with an Artificial Neural Network), 
-takes as input the 15 variables needed to compute the transfer function using a trained 
-ANN. It first validates that the inputs are in their specific parameter range, initializes
-time variables, then performs the simulation of the transfer function using the TRCM_ANN 
-function. The function returns  the timestep (t_EWT) and the interpolated point of the 
-transfer function (g_EWT).
+The g_short_term (the short-term transfer function computed with an Artificial Neural Network), 
+takes as input the 15 variables needed to compute the transfer function using a trained ANN. It 
+first validates that the inputs are in their specific parameter range, initializes time variables, 
+then performs the simulation of the transfer function using the TRCM_ANN function. The function 
+returns the timestep (t_EWT) and the interpolated point of the transfer function (g_EWT).
 # Arguments
     - `ks`: Ground thermal conductivity [W/mK]
     - `Cs`: Ground volumetric heat capacity [J/Km^3]
@@ -38,11 +40,12 @@ transfer function (g_EWT).
     -`t_EWT`: timestep of the transfer function
     -`g_EWT`: interpolated point of the short-term transfer function 
 # Reference
-    - Pasquier, Zarrella and Labib, 2018. Application of artificial neural networks to 
-        near-instant construction of short-term g-functions. Applied Thermal Engineering.
+    - Pasquier, Zarrella and Labib, 2018. Application of artificial neural networks to near-instant 
+        construction of short-term g-functions. Applied Thermal Engineering.
         https://www.sciencedirect.com/science/article/abs/pii/S1359431118305921 
 """
-function gST_ANN(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
+
+function g_short_term(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
     #= 
     DESCRIPTION OF INPUT VARIABLES:
 
@@ -63,64 +66,68 @@ function gST_ANN(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
     Fluid flow rate                         V̇        3.33e-4          5.0e-4          m^3/s
     Half shank spacing                      D        0.02(rb-2ro)+ro  0.98(rb-2ro)+ro m
     Simulation time step                    dt       15               24*3600         s
-    Simulation duration                     tf       15               100*365*24*3600 s
+    Simulation duration                     tf       15               7*24*3600       s
     Borehole coordinate (x,y) [nb x 2]      xy                                        m
 
     =#
 
     # 1.0 - Validation of input parameters
 
-    # out_of_range is a boolean value (true if at least one of the parameters is out of 
-    # range, and false otherwise), p is an array containing the 8 parameters used to compute
-    # the transfer function
+    # out_of_range is a boolean value (true if at least one of the parameters is out of range, and 
+    # false otherwise), p is an array containing the 8 parameters used to compute the transfer 
+    # function 
     p = input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
 
     # 2.0 - Initialization of variables
 
     # 2.1 - Assembly of time vector
-    t = [min(dt, 5 * 24 * 3600):dt:tf;]
+    t = [min(dt, 24 * 3600):dt:tf;]
 
     # 2.2 - Timestamp
 
-    # This timestamp follow a geometric progression, and the artificial neural network 
-    # has been trained on it to reproduce the transfer function
-    ts = [15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 180, 195, 225, 240, 270, 300, 345, 390,
-        420, 480, 540, 600, 660, 750, 840, 930, 1035, 1170, 1305, 1470, 1620, 1830,
-        2040, 2280, 2535, 2865, 3180, 3570, 3975, 4470, 4965, 5580, 6210, 6975, 7755,
-        8730, 9690, 10905, 12120, 13635, 15150, 17040, 18930, 21300, 23670, 26625,
-        29580, 33285, 36975, 41595, 46215, 52005, 57780, 64995, 72225, 81255, 90285,
-        101565, 112845, 126960, 141060, 158685, 176325, 198360, 220410, 247950, 275505,
-        309945, 344385, 387435, 430485, 484290, 538095, 571455, 604800]
+    # This timestamp follow a geometric progression, and the artificial neural network has been 
+    # trained on it to reproduce the transfer function
+    ts = [
+        15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 180, 195, 225, 240, 270, 300, 345, 390,420, 
+        480, 540, 600, 660, 750, 840, 930, 1035, 1170, 1305, 1470, 1620, 1830, 2040, 2280, 2535, 
+        2865, 3180, 3570, 3975, 4470, 4965, 5580, 6210, 6975, 7755, 8730, 9690, 10905, 12120, 13635,
+        15150, 17040, 18930, 21300, 23670, 26625, 29580, 33285, 36975, 41595, 46215, 52005, 57780, 
+        64995, 72225, 81255, 90285, 101565, 112845, 126960, 141060, 158685, 176325, 198360, 220410, 
+        247950, 275505, 309945, 344385, 387435, 430485, 484290, 538095, 571455, 604800
+        ]
 
     # 3.0 - Construction of the short-term (ST) transfer function 
 
-    # gST is calculated with a trained artificial neural network
-    gST = 1 ./ (exp.(TRCM_ANN(p)) ./ ts) .- 1
-    gST[gST.<0] .= 0 # all negatives values are equaled to zero 
+    # g_raw contain the 85 raw values calculated with the trained artificial neural network
+    g_raw = 1 ./ (exp.(TRCM_ANN(p)) ./ ts) .- 1
+    g_raw[g_raw.<0] .= 0
 
     # 4.0 - Interpolation of transfer function
 
-    # Interpolation with the PCHIP Interpolator, using the timestamp ts (array 85x1), and 
-    # the gST array (85x1). Creates a (16x1) array containing the interpolated values
-    itp = Interpolator(ts, gST)
+    # Interpolation with the PCHIP Interpolator, using the timestamp ts (array 85x1), and the g_raw 
+    # array (85x1). Creates a (16x1) array containing the interpolated values
+    #itp = Interpolator(ts, gST)
+    # TODO : not sure what creates itp??!!!!!
+    itp = Interpolator(ts, g_raw)
 
     # Only including values associated with time smaller than the last element of ts
-    t_included = t[t.<=last(ts)]
-    gST = itp.(t_included)
+    # t_included = t[t.<=last(ts)]
+    gST = itp.(t)
+
 
     # 5.0 - Assembly of the Entering Water Temperature variables 
 
     t_EWT = t[t.<=last(ts)] # timestep
     g_EWT = gST # transfer function
 
-    return t_EWT, g_EWT
+    return t_EWT, g_EWT, g_raw
 end
 
 """
     input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
 
-The input parameter validation function validates if the given parameters are in their 
-specific range, for which the ANN has been trained.  
+The input parameter validation function validates if the given parameters are in their specific 
+range, for which the ANN has been trained.  
 # Arguments
     - `ks`: Ground thermal conductivity [W/mK]
     - `Cs`: Ground volumetric heat capacity [J/Km^3]
@@ -138,40 +145,40 @@ specific range, for which the ANN has been trained.
     - `dt`: Simulation time step [s]
     - `tf`: Simulation duration [s]
 # Output
-    -`out_of_range`: boolean value (true if at least one parameter is out of range, and 
-        false if all the parameters are inside their respective range)
+    -`out_of_range`: boolean value (true if at least one parameter is out of range, and false if all 
+        the parameters are inside their respective range)
     -`p`: array containing the 8 parameters used to compute the transfer function
 """
 function input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
 
     # The 15x2 p_limit matrix contains the respective range of the parameters 
     p_limit = [
-        0.5                 4;
-        1.7e6               2.6e6;
-        0.5                 3;
-        1.7e6               2.6e6;
-        0.4                 0.4;
-        1.9e6               1.9e6;
-        4.2e6               4.2e6;
-        0.017               0.017;
-        0.022               0.022;
-        2*ro+2e-3           0.1;
-        110                 200;
-        3.33e-4             5.0e-4;
-        0.02*(rb-2*ro)+ro   0.98*(rb-2*ro)+ro;
-        15                  24*3600;
-        15                  100*365*24*3600
+        0.5                 4;                 # ks
+        1.7e6               2.6e6;             # Cs
+        0.5                 3;                 # kg
+        1.7e6               2.6e6;             # Cg
+        0.4                 0.4;               # kp
+        1.9e6               1.9e6;             # Cp
+        4.2e6               4.2e6;             # Cf
+        0.017               0.017;             # ri
+        0.022               0.022;             # ro
+        2*ro+2e-3           0.1;               # rb
+        110                 200;               # H
+        3.33e-4             5.0e-4 ;           # V̇
+        0.02*(rb-2*ro)+ro   0.98*(rb-2*ro)+ro; # D
+        15                  24*3600;           # dt
+        15                  7*24*3600          # tf
         ]
 
     # Arrays containing the parameters, their names, and units
     params = [ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf]
-    p_names = ["ks", "Cs", "kg", "Cg", "kp", "Cp", "Cf", "ri", "ro", "rb", "H", "V̇", "D", "dt", "tf"]
+    p_names = ["ks", "Cs", "kg", "Cg", "kp", "Cp", "Cf", "ri", "ro", "rb", "H", "V̇", "D", "dt","tf"]
     p_units = ["W/mK", "J/Km^3", "W/mK", "J/Km^3", "W/mK", "J/Km^3", "J/Km^3", "m", "m",
         "m", "m", "m^3/s", "m", "s", "s"]
 
 
-    # Boolean variable is either true (1) if the value of the parameter is out of range
-    # or false (0) if the value is in range
+    # Boolean variable is either true (1) if the value of the parameter is out of range or false (0)
+    # if the value is in range
     out_of_range = false
     for i in eachindex(params)
         if params[i] < p_limit[i, 1] # the parameter is smaller than the min
@@ -205,9 +212,8 @@ end
     TRCM_ANN(x1)
 
 The Thermal Resistance and Capacity Model's Artificial Neural Network function performs a 
-simulation, using the weights and biases of a trained artificial neural network, to generate
-the transfer function. It is based on the MATLAB Neural Network Toolbox function 
-genFunction.
+simulation, using the weights and biases of a trained artificial neural network, to generate the 
+transfer function. It is based on the MATLAB Neural Network Toolbox function genFunction.
 # Arguments
     - `x1`: array of the 8 paramaters (ks, Cs, kg, Cg, rb, H, V̇, D)
 # Output
@@ -574,13 +580,13 @@ end
 """
     step1(x,constants)
 
-This function is used to perform the simulation of the artificial neural network. The 
-step1 function is equivalent to the mapminmax_apply function in MATLAB and performs element-
-wise operations (minus, times, plus). It is the first step of the ANN's simulation.
+This function is used to perform the simulation of the artificial neural network. The step1 function
+is equivalent to the mapminmax_apply function in MATLAB and performs element-wise operations (minus,
+times, plus). It is the first step of the ANN's simulation.
 # Arguments
     -`x`: array of the 8 paramaters (ks, Cs, kg, Cg, rb, H, V̇, D)
-    -`constants`: struct containing the constants needed to performs the simulation 
-        (xoffset, gain, ymin) 
+    -`constants`: struct containing the constants needed to performs the simulation (xoffset, gain, 
+        ymin) 
 # Output
     -`y`: array containing the 8 transformed paramaters
 """
@@ -590,19 +596,19 @@ function step1(x, constants)
     y .*= constants.gain
     y .+= constants.ymin
     return y
+
 end
 
 """
     step2(y,constants)
 
-This functions is used to perform the simulation of the artificial neural network. The 
-step2 function is equivalent to the mapminmax_reverse function in MATLAB and performs 
-element-wise operations (minus, division, plus). It is the last step of the ANN's 
-simulation.
+This functions is used to perform the simulation of the artificial neural network. The step2 
+function is equivalent to the mapminmax_reverse function in MATLAB and performs element-wise 
+operations (minus, division, plus). It is the last step of the ANN's simulation.
 # Arguments
     -`y`: (85x1) array of points generated from preceding steps
-    -`constants`: struct containing the constants needed to performs the simulation 
-        (xoffset, gain, ymin)
+    -`constants`: struct containing the constants needed to performs the simulation (xoffset, gain, 
+        ymin)
 # Output
     -`x`: array of the 85 points corresponding to the transfer function
 """
@@ -612,4 +618,5 @@ function step2(y, constants)
     x ./= constants.gain
     x .+= constants.xoffset
     return x
+
 end

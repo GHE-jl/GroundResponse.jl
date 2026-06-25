@@ -1,6 +1,5 @@
 # Validation script that compute five g functions with julia's g_short_term function and compares
 # it with matlab's gST_ANN function.
-using LinearAlgebra
 
 include("../../src/g_short_term.jl")
 include("dataset_validation.jl")

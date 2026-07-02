@@ -3,6 +3,8 @@
 #   2. Borefield size scaling — g-functions from 1×1 to 5×5 (FLS).
 #   3. Model comparison — ILS, ICS, FLS, MILS, MFLS on a 3×3 borefield.
 
+import Pkg; Pkg.activate(@__DIR__)
+
 using CairoMakie
 using GroundResponse
 
@@ -45,15 +47,14 @@ models = [
     ILSModel(ks, Cs),
     ICSModel(rb, ks, Cs),
     FLSModel(H, D, ks, Cs),
-    MILSModel(rb, ks, Cs, Cf, vD),
+    # MILSModel(rb, ks, Cs, Cf, vD),
     MFLSModel(H, rb, D, ks, Cs, Cf, vD),
 ]
-model_labels = ["ILS", "ICS", "FLS", "MILS", "MFLS"]
-gs_models = [successive_flux(t, rb, xy33, m) for m in models]#TODO: Fix for the MILS
+# model_labels = ["ILS", "ICS", "FLS", "MILS", "MFLS"]#TODO: Fix for the MILS
+model_labels = ["ILS", "ICS", "FLS", "MFLS"]
+gs_models = [successive_flux(t, rb, xy33, m) for m in models]
 
 # Figures
-colors = Makie.wong_colors()
-
 # Figure 1: method agreement (left) and size scaling (right)
 f1 = Figure(size = (1100, 480))
 
@@ -86,7 +87,7 @@ ax3 = Axis(f2[1, 1],
              "(B = $(B) m, H = $(H) m, D = $(D) m, ks = $(ks) W/mK)\n" *
              "Moving models: vD = $(vD) m/s, Cf = $(Cf/1e6) MJ/m³K",
     xscale = log10)
-linestyles = [:solid, :solid, :solid, :dash, :dash]
+linestyles = [:solid, :dash, :dot, :dashdot, :dashdotdot]
 for (k, (g, lbl, ls)) in enumerate(zip(gs_models, model_labels, linestyles))
     lines!(ax3, t̃, g, linewidth = 2.5, color = colors[k], linestyle = ls, label = lbl)
 end

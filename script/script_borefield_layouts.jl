@@ -1,5 +1,7 @@
 # Visualization of all borefield layout configurations (~50 boreholes each).
 
+import Pkg; Pkg.activate(@__DIR__)
+
 using CairoMakie
 using GroundResponse
 

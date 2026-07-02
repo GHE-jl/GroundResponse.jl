@@ -1,5 +1,7 @@
 # Single-borehole g-function comparison: ILS, ICS, FLS, MILS, MFLS.
 
+import Pkg; Pkg.activate(@__DIR__)
+
 using CairoMakie
 using GroundResponse
 

@@ -2,6 +2,8 @@
 # Compares FLS (radially symmetric, no advection) with MILS and MFLS (groundwater flow
 # in the +x direction). The asymmetric plume elongation is clearly visible for MILS/MFLS.
 
+import Pkg; Pkg.activate(@__DIR__)
+
 using CairoMakie
 using GroundResponse
 

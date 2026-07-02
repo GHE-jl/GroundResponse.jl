@@ -1,6 +1,8 @@
 # High-level ground_response interface: AbstractGroundModel dispatch, benchmark across
 # models (single borehole) and borefield sizes (FLS, successive flux).
 
+import Pkg; Pkg.activate(@__DIR__)
+
 using BenchmarkTools
 using CairoMakie
 using GroundResponse
@@ -15,8 +17,8 @@ Cf = 4.2e6   # Groundwater volumetric heat capacity [J/m³K]
 vD = 1e-7    # Darcy velocity [m/s]
 B  = 5.0     # Borehole spacing [m]
 
-# 200 log-spaced time steps: 1 h → 25 yr
-t = 3600.0 .* exp10.(range(0, log10(8760 * 25), length = 200))
+# 300 log-spaced time steps: 1 h → 25 yr
+t = 3600.0 .* exp10.(range(0, log10(8760 * 25), length = 300))
 
 # Ground models — all subtypes of AbstractGroundModel
 m_ils  = ILSModel(ks, Cs)

@@ -124,9 +124,10 @@ function _ics(t::T, r::T, rc::T, ks::T, Cs::T) where {T<:AbstractFloat}
     r̃ > 50 && return _ils(t, r, ks, Cs)
 
     # Upper integration limit
-    s_upper = sqrt(T(50) / t̃)
+    # s_upper = sqrt(T(50) / t̃)
 
-    if r̃ > T(1.5)
+    # TODO : check whats going on with this part of the function
+    #=if r̃ > T(1.5)
         # The integrand oscillates at spatial frequency r̃/π (from besselj0/bessely0 at r̃·s).
         half_period = T(π) / r̃
         n_breaks = min(floor(Int, s_upper / half_period), 500)
@@ -137,11 +138,11 @@ function _ics(t::T, r::T, rc::T, ks::T, Cs::T) where {T<:AbstractFloat}
         end
         pts[end] = s_upper
         integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), pts..., rtol = T(1e-6))
-    else
+    else=#
         # r ≈ rc: integrand is smooth (Wronskian identity makes oscillations cancel exactly
         # at r̃ = 1). Standard integration with Inf is fast and well-conditioned.
-        integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), T(1e-8), T(Inf), rtol = T(1e-6))
-    end
+    integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), T(1e-8), T(Inf), rtol = T(1e-6))
+    #end
 
     return integral / (T(π)^2 * ks)
 end

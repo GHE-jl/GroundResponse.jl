@@ -29,13 +29,22 @@ Modules = [GroundResponse]
 
 ### Spatial superposition methods
 
-- [`successive_flux`](@ref) — iterative method (Nguyen & Pasquier, 2021)
-- [`bloc_matrix`](@ref) — direct block-matrix solve (Dusseault et al., 2018)
+Presented in order of increasing boundary-condition detail (BC-I → BC-II → BC-III):
+
+- [`uniform_flux`](@ref) — **BC-I**: equal flux on every borehole (Guo et al., 2021)
+- [`successive_flux`](@ref) — **BC-II**: iterative equal-mean-temperature solve (Nguyen & Pasquier, 2021)
+- [`bloc_matrix`](@ref) — **BC-II**: direct block-matrix solve (Dusseault et al., 2018)
+- [`segment_response`](@ref) — **BC-III**: segment (uniform-wall-temperature) solve (Cimmino & Bernier, 2014)
+- [`segment_response_marching`](@ref) — **BC-III**: stepwise time-marching alternative to the block
+  matrix (Cimmino, 2018)
+
+The boundary condition is selected on [`FLSModel`](@ref) through its optional `nseg` field
+(`nseg > 1` ⇒ BC-III).
 
 ### Borefield layouts
 
 - [`borefield`](@ref) — unified entry point
-- [`borefield_radius`](@ref) — pairwise-distance matrix
+- [`borefield_geometry`](@ref) — pairwise distance and angle matrices
 - [`borefield_rectangle`](@ref), [`borefield_line`](@ref), [`borefield_circle`](@ref)
 - [`borefield_L`](@ref), [`borefield_U`](@ref), [`borefield_open_rectangle`](@ref)
 

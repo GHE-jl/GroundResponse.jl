@@ -26,16 +26,10 @@ Label(f[0, :], "Borefield layout configurations  (B = $(B) m)", fontsize = 16, f
 for (k, (title, xy)) in enumerate(layouts)
     row = (k - 1) ÷ 3 + 1
     col = mod1(k, 3)
-    ax = Axis(f[row, col],
-        title  = title,
-        xlabel = "x (m)",
-        ylabel = "y (m)",
+    ax = Axis(f[row, col], title  = title, xlabel = "x (m)", ylabel = "y (m)",
         aspect = DataAspect())
-    scatter!(ax, xy[:, 1], xy[:, 2],
-        color        = :steelblue,
-        markersize   = 8,
-        strokecolor  = :navy,
-        strokewidth  = 0.6)
+    scatter!(ax, xy[:, 1], xy[:, 2], color = :steelblue, markersize = 8, strokecolor = :navy,
+        strokewidth = 0.6)
 end
 
 display(f)

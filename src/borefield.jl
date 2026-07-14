@@ -1,34 +1,81 @@
 using LinearAlgebra
 
 """
-    borefield_radius(xy, rb)
+    borefield_geometry(xy, rb)
 
-Compute the pairwise radius matrix, flattened vector, unique values, and indices for a borefield.
-Used in spatial superposition to evaluate the ground thermal response at each unique inter-borehole
-distance.
+Pairwise geometry of a borefield: the distance matrix, the flow-relative angle matrix, and the
+**unique (distance, angle) combinations**. This helper feeds every ground model:
+  - isotropic models (ILS, ICS, FLS) consume only the distance matrix `r`;
+  - moving models (MILS, MFLS) additionally consume the angle matrix `θ`, because under
+    groundwater flow the pairwise response is asymmetric (`g[i,j] ≠ g[j,i]`) and depends on both
+    the separation `rᵢⱼ` and the angle `θᵢⱼ` of the source→receiver direction relative to the
+    flow (+x).
+Convention: row `i` is the **receiver** and column `j` the **source**, matching `g[k,i,j]`. The
+angle is measured for the source→receiver vector, so a receiver directly downstream of the source
+has `θ = 0°` (warmest) and one directly upstream has `θ = 180°` (coolest). Angles are returned in
+**degrees**.
 # Arguments
-    - `xy`: Borehole coordinates (nb × 2) [m]
-    - `rb`: Borehole radius [m]
+    - `xy`: Borehole coordinates (nb × 2) [m]. Groundwater flows along is assumed along +x.
+    - `rb`: Borehole radius [m]. Placed on the diagonal of `r`.
 # Outputs
-    - `r`: Pairwise radius matrix (nb × nb) [m] — diagonal entries equal `rb`
-    - `rᵥ`: Flattened vector of `r` (nb² × 1) [m]
-    - `rᵤ`: Unique radius values (nbᵤ × 1) [m]
-    - `rᵢ`: Index of each entry of `rᵥ` into `rᵤ` (nb² × 1)
-    - `θ`: Azimuth angle of each borehole from the origin (nb,) [rad]
-    - `nb`: Number of boreholes [-]
+    - `r`: Pairwise distance matrix (nb × nb) [m] (diagonal entries equal `rb`).
+    - `θ`: Pairwise angle matrix (nb × nb) [°]; `θ[i,j] = acosd((xᵢ − xⱼ)/r[i,j])` ∈ [0, 180];
+        `0` on the diagonal.
+    - `keys`: Unique `(r, θ)` pairs (nu × 2) [m, °], including the diagonal `(rb, 0)`.
+    - `idx`: Index matrix (nb × nb) mapping each `(i,j)` to its row in `keys`. Lets a caller
+        evaluate each unique response once and scatter it.
 """
-function borefield_radius(xy::AbstractArray{<:Real}, rb::Real)
-    r = sqrt.(sum(abs2, xy, dims=2) .+ sum(abs2, xy, dims=2)' .- 2 * (xy * xy'))
+function borefield_geometry(xy::AbstractArray{<:Real}, rb::Real)
     nb = size(xy, 1)
-    r  = r + Diagonal(rb * ones(nb))
-    rᵥ = reshape(r, nb * nb)
-    rᵤ = unique(rᵥ)
-    rᵢ = indexin(rᵥ, rᵤ)
-    θ  = atan.(xy[:, 2], xy[:, 1])
-    return r, rᵥ, rᵤ, rᵢ, θ, nb
+    r  = sqrt.(max.(sum(abs2, xy, dims=2) .+ sum(abs2, xy, dims=2)' .- 2 * (xy * xy'), 0.0))
+    dx = xy[:, 1] .- xy[:, 1]'                          # dx[i,j] = xᵢ − xⱼ (receiver − source)
+    θ  = [i == j ? 0.0 : acosd(clamp(dx[i, j] / r[i, j], -1.0, 1.0)) for i in 1:nb, j in 1:nb]
+    r  = r + Diagonal(fill(float(rb), nb))              # self-distance on the diagonal → rb
+
+    keys   = Tuple{Float64,Float64}[]
+    keymap = Dict{Tuple{Float64,Float64},Int}()
+    idx    = zeros(Int, nb, nb)
+    for j in 1:nb, i in 1:nb
+        key = (round(r[i, j]; digits=10), round(θ[i, j]; digits=10))
+        idx[i, j] = get!(keymap, key) do
+            push!(keys, key)
+            length(keys)
+        end
+    end
+    keymat = isempty(keys) ? zeros(0, 2) : reduce(vcat, ([k[1] k[2]] for k in keys))
+    return r, θ, keymat, idx
 end
 
-# Borefield layout generators
+"""
+    borefield(shape, args...)
+
+Unified entry point for generating borehole coordinates. `shape` selects the layout; the remaining
+arguments are forwarded unchanged to the corresponding layout function.
+# Arguments
+| `shape`            | Layout function              | Signature(s)                         |
+|:-------------------|:-----------------------------|:-------------------------------------|
+| `:rectangle`       | `borefield_rectangle`        | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
+| `:line`            | `borefield_line`             | `(n, B)`                             |
+| `:circle`          | `borefield_circle`           | `(nb, R)`                            |
+| `:L`               | `borefield_L`                | `(n1, n2, B)` or `(n1, n2, B1, B2)`  |
+| `:U`               | `borefield_U`                | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
+| `:open_rectangle`  | `borefield_open_rectangle`   | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
+# Output
+    - `xy`: Borehole coordinates (nb × 2) [m]
+"""
+function borefield(shape::Symbol, args...)
+    shape === :rectangle      && return borefield_rectangle(args...)
+    shape === :line           && return borefield_line(args...)
+    shape === :circle         && return borefield_circle(args...)
+    shape === :L              && return borefield_L(args...)
+    shape === :U              && return borefield_U(args...)
+    shape === :open_rectangle && return borefield_open_rectangle(args...)
+    throw(ArgumentError(
+        "Unknown borefield shape :$shape. " *
+        "Valid shapes: :rectangle, :line, :circle, :L, :U, :open_rectangle"
+    ))
+end
+
 """
     borefield_rectangle(nx, ny, B)
     borefield_rectangle(nx, ny, Bx, By)
@@ -167,33 +214,4 @@ function borefield_open_rectangle(nx::Integer, ny::Integer, Bx::Real, By::Real)
     left   = hcat(zeros(ny-2),                       (1:ny-2) .* By)
     right  = hcat(fill(Float64((nx-1)*Bx), ny-2),    (1:ny-2) .* By)
     return vcat(bottom, top, left, right)
-end
-
-# Unified entry point
-"""
-    borefield(shape, args...)
-
-Unified entry point for generating borehole coordinates. `shape` selects the layout; the remaining
-arguments are forwarded unchanged to the corresponding layout function.
-
-| `shape`            | Layout function              | Signature(s)                         |
-|:-------------------|:-----------------------------|:-------------------------------------|
-| `:rectangle`       | `borefield_rectangle`        | `(nx, ny, B)` or `(nx, ny, Bx, By)` |
-| `:line`            | `borefield_line`             | `(n, B)`                             |
-| `:circle`          | `borefield_circle`           | `(nb, R)`                            |
-| `:L`               | `borefield_L`                | `(n1, n2, B)` or `(n1, n2, B1, B2)` |
-| `:U`               | `borefield_U`                | `(nx, ny, B)` or `(nx, ny, Bx, By)` |
-| `:open_rectangle`  | `borefield_open_rectangle`   | `(nx, ny, B)` or `(nx, ny, Bx, By)` |
-"""
-function borefield(shape::Symbol, args...)
-    shape === :rectangle      && return borefield_rectangle(args...)
-    shape === :line           && return borefield_line(args...)
-    shape === :circle         && return borefield_circle(args...)
-    shape === :L              && return borefield_L(args...)
-    shape === :U              && return borefield_U(args...)
-    shape === :open_rectangle && return borefield_open_rectangle(args...)
-    throw(ArgumentError(
-        "Unknown borefield shape :$shape. " *
-        "Valid shapes: :rectangle, :line, :circle, :L, :U, :open_rectangle"
-    ))
 end

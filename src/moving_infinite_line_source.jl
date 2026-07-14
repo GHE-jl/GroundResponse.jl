@@ -1,149 +1,162 @@
 using SpecialFunctions: besseli, besselk, expint
+using QuadGK: quadgk
 using LinearAlgebra
 
 """
-    mils(t, xy, rb, ks, Cs, Cf, vD)
+    mils(t, r, θ, rb, ks, Cs, Cf, vD)
 
 Compute the moving infinite line source (MILS) model based on Pasquier and Lamarche (2022). The
 output is a g-function that requires a heat load per unit of borehole length [W/m] to provide the
 borehole wall temperature. The groundwater flow is in the positive x-direction.
+
+Like the isotropic models (`ils`, `fls`), `mils` dispatches on geometry rather than coordinates:
+the direction-dependent response is a function of the separation `r` and the flow-relative angle
+`θ` only (the point is `x = r·cosθ`, `y = r·sinθ`, and only `x` and `r` enter the model). Pass
+scalars for a single point, or matching `nb×nb` matrices — built with
+[`borefield_geometry`](@ref) — for a borefield.
 # Arguments
     - `t`: Time value or vector [s]
-    - `xy`: Coordinates at which to compute [m] — direction-dependent form (Eq. 1).
-        - Pass a 2-element vector `[x, y]` for a single point.
-        - Pass a `nb×2` matrix of borehole coordinates for a borefield; output is then a
-            `(nb × nb)` or `(nt × nb × nb)` g-matrix.
-    - `rb`: Borehole radius [m] — required with `xy` to identify inside/outside the borehole.
-        - If `r = sqrt(x² + y²) ≤ rb`, uses borehole-wall series scaled by I₀ (Eq. 13 analog).
-        - If `r > rb`, uses directional form: ḡ(r) × exp(x·vT/(2α)) / I₀(r·vT/(2α)) (Eq. 1).
+    - `r`: Separation distance [m]. Scalar, or an `nb×nb` matrix for a borefield.
+        - If `r ≤ rb`, uses the borehole-wall series scaled by I₀ (Eq. 13 analog); the borefield
+          self entries (diagonal `r = rb`) therefore give the borehole-wall self response.
+        - If `r > rb`, uses the directional form ḡ(r) × exp(x·vT/(2α)) / I₀(r·vT/(2α)) (Eq. 1).
+    - `θ`: Flow-relative angle in **degrees**, `θ ∈ [0, 180]`. Scalar, or an `nb×nb` matrix
+        matching `r`. Downstream `θ = 0` is warmest, upstream `θ = 180` coolest.
+    - `rb`: Borehole radius [m] — identifies inside/outside the borehole.
     - `ks`: Ground thermal conductivity [W/mK]
     - `Cs`: Ground volumetric specific heat [J/m³K]
     - `Cf`: Groundwater volumetric specific heat [J/m³K]
     - `vD`: Darcy velocity (groundwater speed) [m/s]
         - Must not be zero; set to a low value for impervious ground (1e-12) or use `ils`.
 # Output
-    - `g`: A g-function corresponding to the borehole wall temperature [°Cm/W]
+    - `g`: A g-function corresponding to the borehole wall temperature [°Cm/W]. A borefield input
+        gives an `(nb × nb)` matrix (scalar `t`) or `(nt × nb × nb)` array (vector `t`).
 # Reference
     - Pasquier, P., & Lamarche, L. (2022). Analytic expressions for the moving infinite line source
         model. Geothermics, 103, 102413. https://doi.org/10.1016/j.geothermics.2022.102413
 """
-function mils(t::Real, xy::AbstractVector{<:Real}, rb::Real, ks::Real, Cs::Real, Cf::Real,
-    vD::Real)
-    T = float(promote_type(typeof(t), eltype(xy), typeof(rb), typeof(ks), typeof(Cs), typeof(Cf),
-        typeof(vD)))
-    return _mils(T(t), T(ks), T(Cs), T(Cf), T(xy[1]), T(xy[2]), T(rb), T(vD))
+function mils(t::Real, r::Real, θ::Real, rb::Real, ks::Real, Cs::Real, Cf::Real, vD::Real)
+    T = float(promote_type(typeof(t), typeof(r), typeof(θ), typeof(rb), typeof(ks), typeof(Cs),
+        typeof(Cf), typeof(vD)))
+    return _mils(T(t), T(ks), T(Cs), T(Cf), T(r), T(r) * cosd(T(θ)), T(rb), T(vD))
 end
-function mils(t::AbstractVector{<:Real}, xy::AbstractVector{<:Real}, rb::Real, ks::Real,
-    Cs::Real, Cf::Real, vD::Real)
-    T = float(promote_type(eltype(t), eltype(xy), typeof(rb), typeof(ks), typeof(Cs), typeof(Cf),
-        typeof(vD)))
+function mils(t::AbstractVector{<:Real}, r::Real, θ::Real, rb::Real, ks::Real, Cs::Real,
+    Cf::Real, vD::Real)
+    T = float(promote_type(eltype(t), typeof(r), typeof(θ), typeof(rb), typeof(ks), typeof(Cs),
+        typeof(Cf), typeof(vD)))
     t_T = convert(Vector{T}, t)
+    x   = T(r) * cosd(T(θ))
     g = similar(t_T)
     @inbounds @simd for i in eachindex(t_T)
-        g[i] = _mils(t_T[i], T(ks), T(Cs), T(Cf), T(xy[1]), T(xy[2]), T(rb), T(vD))
+        g[i] = _mils(t_T[i], T(ks), T(Cs), T(Cf), T(r), x, T(rb), T(vD))
     end
     return g
 end
-function mils(t::Real, xy::AbstractMatrix{<:Real}, rb::Real, ks::Real, Cs::Real, Cf::Real,
-    vD::Real)
-    T = float(promote_type(typeof(t), eltype(xy), typeof(rb), typeof(ks), typeof(Cs), typeof(Cf),
-        typeof(vD)))
-    nb = size(xy, 1)
-    g2D = Matrix{T}(undef, nb, nb)
-    for j in 1:nb
-        for i in 1:nb
-            dx = T(xy[i, 1] - xy[j, 1])
-            dy = T(xy[i, 2] - xy[j, 2])
-            g2D[i, j] = _mils(T(t), T(ks), T(Cs), T(Cf), dx, dy, T(rb), T(vD))
+function mils(t::Real, r::AbstractMatrix{<:Real}, θ::AbstractMatrix{<:Real}, rb::Real, ks::Real,
+    Cs::Real, Cf::Real, vD::Real)
+    return dropdims(mils([t], r, θ, rb, ks, Cs, Cf, vD); dims = 1)
+end
+function mils(t::AbstractVector{<:Real}, r::AbstractMatrix{<:Real}, θ::AbstractMatrix{<:Real},
+    rb::Real, ks::Real, Cs::Real, Cf::Real, vD::Real)
+    @assert size(r) == size(θ) "r and θ must have the same shape"
+    T = float(promote_type(eltype(t), eltype(r), eltype(θ), typeof(rb), typeof(ks), typeof(Cs),
+        typeof(Cf), typeof(vD)))
+    t_T = convert(Vector{T}, t)
+    nt  = length(t_T)
+    nb  = size(r, 1)
+
+    # Collapse to unique (r, θ) pairs — the direction-dependent kernel (a quadrature/series per
+    # evaluation) is run once per distinct geometry and scattered to every pair that shares it.
+    # This mirrors fls's unique-radius collapse (Rose et al. 2026 strategy for the moving models).
+    pairs = collect(zip(vec(r), vec(θ)))
+    uniq  = unique(pairs)
+    ui    = indexin(pairs, uniq)
+    gU    = Matrix{T}(undef, nt, length(uniq))
+    for (u, (rr, tt)) in enumerate(uniq)
+        R = T(rr)
+        X = R * cosd(T(tt))
+        for k in 1:nt
+            gU[k, u] = _mils(t_T[k], T(ks), T(Cs), T(Cf), R, X, T(rb), T(vD))
         end
     end
-    return g2D
-end
-function mils(t::AbstractVector{<:Real}, xy::AbstractMatrix{<:Real}, rb::Real, ks::Real,
-    Cs::Real, Cf::Real, vD::Real)
-    T = float(promote_type(eltype(t), eltype(xy), typeof(rb), typeof(ks), typeof(Cs), typeof(Cf),
-        typeof(vD)))
-    t_T = convert(Vector{T}, t)
-    nb = size(xy, 1)
-    nt = length(t_T)
     g3D = zeros(T, nt, nb, nb)
-    for j in 1:nb
-        for i in 1:nb
-            dx = T(xy[i, 1] - xy[j, 1])
-            dy = T(xy[i, 2] - xy[j, 2])
-            for k in eachindex(t_T)
-                g3D[k, i, j] = _mils(t_T[k], T(ks), T(Cs), T(Cf), dx, dy, T(rb), T(vD))
-            end
-        end
+    for k in 1:nt
+        @views g3D[k, :, :] .= reshape(gU[k, ui], nb, nb)
     end
     return g3D
 end
 
 """
-    _mils_series(t, ks, Cs, Cf, r, vD)
+    _mils(t, ks, Cs, Cf, r, x, rb, vD)
 
-Kernel for the azimuthal mean MILS response (Eq. 3, Pasquier & Lamarche 2022). Returns the
-circumferential-average g-function at radius `r` from the line source. Used directly by the
-scalar-`r` public overloads, and as the series engine inside `_mils`.
+Kernel function for the MILS model (Pasquier & Lamarche 2022). It evaluates the
+azimuthal-mean Hantush well function series (Eqs. 20 & 25) and applies the direction-dependent
+weighting in one pass, switching formula based on whether the evaluation point is inside or
+outside the borehole cylinder (`x = r·cosθ` is the downstream coordinate):
+- `r ≤ rb`: the series is evaluated at the borehole wall `rb` and scaled by the ratio
+  I₀(r·vT/(2α)) / I₀(rb·vT/(2α)) — analogous to Eq. (13) of Guo et al. (2020). At the self entry
+  `r = rb` this ratio is 1, giving the circumferential-mean borehole-wall response.
+- `r > rb`: directional (θ-dependent) form — ḡ(r) × exp(x·vT/(2α)) / I₀(r·vT/(2α)) [Eq. 1], so
+  downstream points (x > 0) are warmer than upstream ones (x < 0).
 """
-function _mils_series(t::T, ks::T, Cs::T, Cf::T, r::T, vD::T) where {T<:AbstractFloat}
-    ns = 5                             # Number of summand used. Below 20 to avoid BigInt issues.
-    b = (r * vD * Cf / (4 * ks))^2      # b = (Peclet/4)^2
-    τ = (4 * ks / Cs) * (t / r^2)       # τ = 4 * Fo, and Fo = αt/r²
+function _mils(t::T, ks::T, Cs::T, Cf::T, r::T, x::T, rb::T, vD::T) where {T<:AbstractFloat}
+    α  = ks / Cs
+    vT = vD * Cf / Cs
 
-    x = 2 * sqrt(b)
-    I0 = besseli(zero(T), x)
+    # Radius `rs` at which the azimuthal-mean series is evaluated
+    if r ≤ rb
+        rs = rb
+        weight = besseli(zero(T), r  * vT / (T(2) * α)) /
+                 besseli(zero(T), rb * vT / (T(2) * α))
+    else
+        rs = r
+        weight = exp(x * vT / (T(2) * α)) /
+                 besseli(zero(T), rs * vT / (T(2) * α))
+    end
+
+    # Azimuthal-mean (circumferential-average) response at radius `rs` — Hantush well function
+    # series of Pasquier & Lamarche (2022), Eq. 20 (early time) and Eq. 25 (late time).
+    ns = 5                              # Number of summands. Below 20 to avoid BigInt issues.
+    b  = (rs * vD * Cf / (4 * ks))^2    # b = (Péclet/4)²
+    τ  = (4 * ks / Cs) * (t / rs^2)     # τ = 4·Fo, with Fo = αt/rs²
+    xb = 2 * sqrt(b)                    # argument of the Bessel functions
+    I0 = besseli(zero(T), xb)
     a0 = I0 / (4 * T(π) * ks)
 
-    if τ <= (1 / b)
-        # Eq. 20 of Pasquier et Lamarche (2022) (Early Time)
-        S1, S2 = zero(T), zero(T)
-        for i in 0:(ns-1)
-            n = i + 1
-            S2 = b^n / factorial(n)^2
-            S1 += (-τ)^(i + 1) * factorial(i) * S2
+    # The two power series converge only on parts of the (b, τ) plane — Eq. 20 for τ ≤ 1/b and
+    # Eq. 25 for τ ≥ 1 — and for b > 1 they both lose accuracy with a modest number of summands
+    # (they also leave a gap 1/b < τ < 1 where neither converges). For b ≤ 1 (the common low-flow
+    # case) the series are fast and accurate; for b > 1 (high Péclet, e.g. large inter-borehole
+    # distances under strong advection) we instead evaluate the Hantush well function directly by
+    # quadrature, W(τ, b) = ∫_{1/τ}^∞ ψ⁻¹·exp(−ψ − b/ψ) dψ (Pasquier & Lamarche 2022, Eq. 3), which
+    # is robust for any τ.
+    if b > one(T)
+        W, _ = quadgk(ψ -> exp(-ψ - b / ψ) / ψ, inv(τ), T(Inf), rtol = T(1e-8))
+        mean = a0 * W
+    elseif τ <= (1 / b)
+        # Eq. 20 of Pasquier & Lamarche (2022) (early time).
+        S1 = zero(T)
+        for m in 0:(ns-1)
+            inner = zero(T)
+            for n in (m+1):ns
+                inner += b^n / factorial(n)^2
+            end
+            S1 += (-τ)^(m + 1) * factorial(m) * inner
         end
-        return a0 * (expint(inv(τ)) * I0 + exp(-inv(τ)) * S1)
+        mean = a0 * (expint(inv(τ)) * I0 + exp(-inv(τ)) * S1)
     else
-        # Eq. 25 of Pasquier et Lamarche (2022) (Late Time)
+        # Eq. 25 of Pasquier & Lamarche (2022) (late time): for b ≤ 1 reached only when τ ≥ 1.
         S1 = zero(T)
         for i in 0:(ns-1)
             S2 = zero(T)
             for n in 1:ns
                 fact = i + n > 18 ? factorial(big(i + n)) : factorial(i + n)
-                S2 += b^(n - 1) / T(fact)^2
+                S2  += b^(n - 1) / T(fact)^2
             end
             S1 += float((factorial(i) / (-τ)^(i + 1)) * S2)
         end
-        return a0 * (2 * besselk(zero(T), x) - expint(b * τ) * I0 - exp(-b * τ) * S1)
+        mean = a0 * (2 * besselk(zero(T), xb) - expint(b * τ) * I0 - exp(-b * τ) * S1)
     end
-end
 
-"""
-    _mils(t, ks, Cs, Cf, x, y, rb, vD)
-
-Unified direction-dependent kernel for the MILS model (Pasquier & Lamarche 2022). Mirrors the
-structure of `_mfls`: switches formula based on whether the evaluation point is inside or outside
-the borehole cylinder.
-- `r = sqrt(x² + y²) ≤ rb`: uses borehole-wall series `_mils_series(rb)`, scaled by the ratio
-  I₀(r·vT/(2α)) / I₀(rb·vT/(2α)) — analogous to Eq. (13) of Guo et al. (2020).
-- `r > rb`: directional form — ḡ(r) × exp(x·vT/(2α)) / I₀(r·vT/(2α)) [Eq. 1].
-"""
-function _mils(t::T, ks::T, Cs::T, Cf::T, x::T, y::T, rb::T, vD::T) where {T<:AbstractFloat}
-    α = ks / Cs
-    vT = vD * Cf / Cs
-    r = sqrt(x^2 + y^2)
-
-    if r ≤ rb
-        # Inside borehole: evaluate series at rb, weight by I₀ ratio
-        g_rb  = _mils_series(t, ks, Cs, Cf, rb, vD)
-        I0_rb = besseli(zero(T), rb * vT / (T(2) * α))
-        I0_r  = besseli(zero(T), r  * vT / (T(2) * α))
-        return g_rb * I0_r / I0_rb
-    else
-        # Outside borehole: direction-dependent form (Eq. 1)
-        g_r  = _mils_series(t, ks, Cs, Cf, r, vD)
-        I0_r = besseli(zero(T), r * vT / (T(2) * α))
-        return g_r * exp(x * vT / (T(2) * α)) / I0_r
-    end
+    return mean * weight
 end

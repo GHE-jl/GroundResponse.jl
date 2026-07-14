@@ -8,22 +8,22 @@ using CairoMakie
 using GroundResponse
 
 # Parameters
-H  = 150.0   # Borehole depth [m]
-D  = 4.0     # Buried depth [m]
+H = 150.0   # Borehole depth [m]
+D = 4.0     # Buried depth [m]
 rb = 0.076   # Borehole radius [m]
 ks = 3.0     # Ground thermal conductivity [W/mK]
 Cs = 2.0e6   # Ground volumetric heat capacity [J/m³K]
 Cf = 4.2e6   # Groundwater volumetric heat capacity [J/m³K]
 vD = 1e-7    # Darcy velocity [m/s]
-B  = 5.0     # Borehole spacing [m]
+B = 5.0     # Borehole spacing [m]
 
 # 300 log-spaced time steps: 1 h → 25 yr
 t = 3600.0 .* exp10.(range(0, log10(8760 * 25), length = 300))
 
-# Ground models — all subtypes of AbstractGroundModel
-m_ils  = ILSModel(ks, Cs)
-m_ics  = ICSModel(rb, ks, Cs)
-m_fls  = FLSModel(H, D, ks, Cs)
+# Ground models — all subtypes of AbstractGroundModel (no computation yet)
+m_ils = ILSModel(ks, Cs)
+m_ics = ICSModel(rb, ks, Cs)
+m_fls = FLSModel(H, D, ks, Cs)
 m_mils = MILSModel(rb, ks, Cs, Cf, vD)
 m_mfls = MFLSModel(H, rb, D, ks, Cs, Cf, vD)
 
@@ -40,7 +40,7 @@ print("  MFLS : "); @btime ground_response(t, rb, xy1, m_mfls)
 
 # Borefield size scaling (FLS, successive flux)
 println("  FLS borefield  —  ground_response  (successive flux)")
-bfield_sizes = [(2, 2), (3, 3), (4, 4), (5, 5)]
+bfield_sizes = [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
 for (nx, ny) in bfield_sizes
     xy = borefield(:rectangle, nx, ny, B)
     nb = size(xy, 1)
@@ -57,14 +57,13 @@ ax = Axis(f[1, 1],
     title  = "FLS borefield g-functions via ground_response  (B = $(B) m)",
     xscale = log10)
 
-all_sizes  = [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
-all_labels = ["Single borehole", "2×2 = 4", "3×3 = 9", "4×4 = 16", "5×5 = 25"]
-colors     = Makie.wong_colors()
+all_labels = ["1x1 = 1", "2×2 = 4", "3×3 = 9", "4×4 = 16", "5×5 = 25"]
+g = zeros(length(t), length(all_labels))
 
-for (k, ((nx, ny), lbl)) in enumerate(zip(all_sizes, all_labels))
+for (k, ((nx, ny), lbl)) in enumerate(zip(bfield_sizes, all_labels))
     xy = borefield(:rectangle, nx, ny, B)
-    g  = ground_response(t, rb, xy, m_fls)
-    lines!(ax, t̃, g, linewidth = 2.5, color = colors[k], label = lbl)
+    g[:, k]  = ground_response(t, rb, xy, m_fls)
+    lines!(ax, t̃, g[:, k], linewidth = 2.5, color = colors[k], label = lbl)
 end
 axislegend(ax, position = :lt)
 display(f)

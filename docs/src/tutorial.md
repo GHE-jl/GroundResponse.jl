@@ -41,8 +41,12 @@ automatically. For a single borehole pass a `1×2` coordinate matrix:
 
 ```julia
 m = FLSModel(150.0, 4.0, ks, Cs)            # H = 150 m, D = 4 m
-g = ground_response(t, rb, [0.0 0.0], m)    # identical to fls(t, rb, 150.0, 4.0, ks, Cs)
+g = ground_response(t, rb, [0.0 0.0], m)    # ≈ fls(t, rb, 150.0, 4.0, ks, Cs)
 ```
+
+By default (`interp = true`) the single-borehole path sub-samples the model and interpolates back,
+so `g` is very close to — but not bit-identical to — a direct `fls` call. Pass `interp = false` for
+the exact evaluation at every `t`.
 
 The advantage is that the *same call* works for a field — only the coordinate matrix changes.
 
@@ -71,11 +75,21 @@ g_bloc = bloc_matrix(t, rb, xy, m)
 # g_succ ≈ g_bloc — the two methods agree to within iteration tolerance
 ```
 
+!!! note "Time sampling and `interp`"
+    [`successive_flux`](@ref) reproduces the load history with a convolution that assumes a
+    **constant time step**. So that a log-spaced `t` (the usual choice) still gives a correct
+    result, the `interp = true` default solves on an internal constant-step grid and interpolates
+    back to your `t` — this also makes the cost independent of `length(t)`. Pass `interp = false`
+    only when `t` is already uniformly spaced. The instantaneous methods ([`bloc_matrix`](@ref),
+    [`uniform_flux`](@ref), and the single-borehole path) are spacing-independent, so for them
+    `interp` is a pure speed-up rather than a correctness requirement.
+
 ## 6. Adding groundwater flow
 
 Switch to a moving model to include advection. The moving models take a Darcy velocity ``v_D`` and
-the groundwater heat capacity ``C_f``, and are evaluated on Cartesian coordinates because flow
-(along ``+x``) breaks radial symmetry:
+the groundwater heat capacity ``C_f``. Because flow (along ``+x``) breaks radial symmetry, their
+response depends on both the separation and the flow-relative angle — but through
+[`ground_response`](@ref) you still just pass the coordinate array `xy`:
 
 ```julia
 Cf, vD = 4.2e6, 1e-6
@@ -97,12 +111,17 @@ groundwater carries the injected heat away. See [Moving-source models](@ref).
 ## 7. Working with low-level g-arrays
 
 To build a field response from a precomputed array — for example, to reuse it across superposition
-methods — evaluate a model on the pairwise-radius matrix from [`borefield_radius`](@ref):
+methods — evaluate a model on the geometry matrices from [`borefield_geometry`](@ref):
 
 ```julia
-r3D = borefield_radius(xy, rb)[1]           # nb×nb radius matrix
+r3D = borefield_geometry(xy, rb)[1]         # nb×nb distance matrix
 g3D = fls(t, r3D, 150.0, 4.0, ks, Cs)       # nt × nb × nb g-array
 g   = successive_flux(g3D)                  # field g-function
+
+# For a moving model, also pass the angle matrix:
+r, θ = borefield_geometry(xy, rb)
+g3D  = mfls(t, r, θ, 150.0, rb, 4.0, ks, Cs, Cf, vD)
+g    = successive_flux(g3D)
 ```
 
 ## Validation scripts

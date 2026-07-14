@@ -8,8 +8,8 @@ using CairoMakie
 using GroundResponse
 
 # Parameters
-H  = 150.0   # Borehole depth [m]
-D  = 4.0     # Buried depth [m]
+H = 150.0   # Borehole depth [m]
+D = 4.0     # Buried depth [m]
 rb = 0.076   # Borehole radius [m]
 ks = 3.0     # Ground thermal conductivity [W/mK]
 Cs = 2.0e6   # Ground volumetric heat capacity [J/m³K]
@@ -24,7 +24,7 @@ ys = range(-25.0, 25.0, step = 1.0)   # [m]
 nx_g, ny_g = length(xs), length(ys)
 
 # Storage: g[i, j] = value at (x = xs[i], y = ys[j])
-g_fls  = Matrix{Float64}(undef, nx_g, ny_g)
+g_fls = Matrix{Float64}(undef, nx_g, ny_g)
 g_mils = Matrix{Float64}(undef, nx_g, ny_g)
 g_mfls = Matrix{Float64}(undef, nx_g, ny_g)
 
@@ -34,14 +34,20 @@ for (j, y) in enumerate(ys), (i, x) in enumerate(xs)
     g_fls[i, j] = fls(t_eval, r, H, D, ks, Cs)
 end
 
+# Convert a Cartesian evaluation point to the (distance, flow-relative angle) the moving models take.
+# θ = acosd(x/r) ∈ [0, 180] (flow along +x); the response is symmetric in y, so the sign of y drops.
+point_rθ(x, y) = (r = sqrt(x^2 + y^2); r ≤ rb ? (rb, 0.0) : (r, acosd(x / r)))
+
 # MILS — analytical series, fast
 for (j, y) in enumerate(ys), (i, x) in enumerate(xs)
-    g_mils[i, j] = mils(t_eval, [x, y], rb, ks, Cs, Cf, vD)
+    r, θ = point_rθ(x, y)
+    g_mils[i, j] = mils(t_eval, r, θ, rb, ks, Cs, Cf, vD)
 end
 
 # MFLS — numerical integration at each point, may take ~30 s
 for (j, y) in enumerate(ys), (i, x) in enumerate(xs)
-    g_mfls[i, j] = mfls(t_eval, [x, y], H, rb, D, ks, Cs, Cf, vD)
+    r, θ = point_rθ(x, y)
+    g_mfls[i, j] = mfls(t_eval, r, θ, H, rb, D, ks, Cs, Cf, vD)
 end
 
 # Collect all values for consistent colour scaling across panels
@@ -61,30 +67,19 @@ panel_titles = [
 maps = [g_fls, g_mils, g_mfls]
 
 for (k, (title, gmap)) in enumerate(zip(panel_titles, maps))
-    ax = Axis(f[1, k],
-        title  = title,
-        xlabel = "x (m)",
-        ylabel = k == 1 ? "y (m)" : "",
+    ax = Axis(f[1, k], title  = title, xlabel = "x (m)", ylabel = k == 1 ? "y (m)" : "",
         aspect = DataAspect())
 
     hm = heatmap!(ax, collect(xs), collect(ys), gmap,
-        colormap   = :turbo,
-        colorrange = (minimum(vec(all_vals)), maximum(vec(all_vals))))
+        colormap   = :turbo, colorrange = (minimum(vec(all_vals)), maximum(vec(all_vals))))
 
     # Borehole location marker
-    scatter!(ax, [0.0], [0.0],
-        marker      = :circle,
-        color       = :white,
-        strokecolor = :black,
-        strokewidth = 1.5,
-        markersize  = 9)
+    scatter!(ax, [0.0], [0.0], marker = :circle, color = :white, strokecolor = :black,
+        strokewidth = 1.5, markersize  = 9)
 
     # Groundwater flow direction arrow (downstream panels only)
     if k > 1
-        arrows!(ax, [25.0], [-20.0], [8.0], [0.0],
-            color     = :white,
-            linewidth = 2,
-            arrowsize = 10)
+        arrows!(ax, [25.0], [-20.0], [8.0], [0.0], color = :white, linewidth = 2, arrowsize = 10)
         text!(ax, 23.5, -17.5, text = "vD", color = :white, fontsize = 11)
     end
 

@@ -1,138 +1,115 @@
 using PCHIPInterpolation
 
-"""
-    g_short_term(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
+# The 85 geometric time nodes [s] on which the ANN reproduces the transfer function. They are
+# fixed by the training procedure (Pasquier et al., 2018); the last node (604800 s = 7 days)
+# marks the short-term validity horizon.
+const _ST_NODES = [
+    15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 180, 195, 225, 240, 270, 300, 345, 390, 420,
+    480, 540, 600, 660, 750, 840, 930, 1035, 1170, 1305, 1470, 1620, 1830, 2040, 2280, 2535,
+    2865, 3180, 3570, 3975, 4470, 4965, 5580, 6210, 6975, 7755, 8730, 9690, 10905, 12120, 13635,
+    15150, 17040, 18930, 21300, 23670, 26625, 29580, 33285, 36975, 41595, 46215, 52005, 57780,
+    64995, 72225, 81255, 90285, 101565, 112845, 126960, 141060, 158685, 176325, 198360, 220410,
+    247950, 275505, 309945, 344385, 387435, 430485, 484290, 538095, 571455, 604800
+]
 
-The g_short_term (the short-term transfer function computed with an Artificial Neural Network), 
-takes as input the 15 variables needed to compute the transfer function using a trained ANN. It 
-first validates that the inputs are in their specific parameter range, initializes time variables, 
-then performs the simulation of the transfer function using the TRCM_ANN function. The function 
-returns the timestep (t_EWT) and the interpolated point of the transfer function (g_EWT).
+"""
+    short_term_response(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf; clamp=true)
+
+Short-term transfer function of the borehole-**outlet** fluid temperature (`T_out`, i.e. the
+entering water temperature on the heat-pump source side), constructed with the artificial
+neural network of Pasquier, Zarrella & Labib (2018). The network emulates the 2.5D thermal
+resistance and capacity model and directly yields a dimensionless transfer function for a unit
+temperature step (ΔT = 1 °C) between the borehole inlet and outlet, so it embeds the borehole
+geometry, thermal capacity and vertical fluid advection.
+
+The mean absolute error with respect to the reference model is about 2e-4, with a maximum
+absolute error near 8e-3. The function is only valid over the 7-day short-term horizon and
+within the ANN training ranges (see below); use `outlet_transfer_function` in
+GroundHeatExchanger.jl to join it to a long-term ground model for the full minutes-to-decades
+response.
+
 # Arguments
     - `ks`: Ground thermal conductivity [W/mK]
-    - `Cs`: Ground volumetric heat capacity [J/Km^3]
+    - `Cs`: Ground volumetric heat capacity [J/Km³]
     - `kg`: Grout thermal conductivity [W/mK]
-    - `Cg`: Grout volumetric heat capacity [J/Km^3]
+    - `Cg`: Grout volumetric heat capacity [J/Km³]
     - `kp`: Pipe thermal conductivity [W/mK]
-    - `Cp`: Pipe volumetric heat capacity [J/Km^3]
-    - `Cf`: Fluid volumetric heat capacity [J/Km^3]
+    - `Cp`: Pipe volumetric heat capacity [J/Km³]
+    - `Cf`: Fluid volumetric heat capacity [J/Km³]
     - `ri`: Inner pipe radius [m]
     - `ro`: Outer pipe radius [m]
     - `rb`: Borehole radius [m]
     - `H`: Borehole length [m]
-    - `V̇`: Fluid flow rate [m^3/s]
+    - `V̇`: Fluid flow rate [m³/s]
     - `D`: Half shank spacing [m]
     - `dt`: Simulation time step [s]
-    - `tf`: Simulation duration [s]
+    - `tf`: Simulation duration [s] (capped at the 7-day short-term horizon)
+    - `clamp`: out-of-range handling — `true` (default) clamps inputs to the training bounds
+        and emits a `@warn`; `false` emits an `@error` and throws an `ArgumentError`.
+
 # Output
-    -`t_EWT`: timestep of the transfer function
-    -`g_EWT`: interpolated point of the short-term transfer function 
+    - `t`: Time vector `dt:dt:tf` [s]
+    - `g`: Dimensionless short-term outlet transfer function at `t` [-]
+
+# Validity ranges (ANN training bounds)
+    ks 0.5–4 W/mK · Cs 1.7–2.6 MJ/m³K · kg 0.5–3 W/mK · Cg 1.7–2.6 MJ/m³K · kp 0.4 W/mK ·
+    Cp 1.9 MJ/m³K · Cf 4.2 MJ/m³K · ri 0.017 m · ro 0.022 m · rb (2ro+2mm)–0.1 m ·
+    H 110–200 m · V̇ 3.33e-4–5.0e-4 m³/s · D 0.02(rb-2ro)+ro – 0.98(rb-2ro)+ro m ·
+    dt 15 s – 24 h · tf 15 s – 7 days
+
 # Reference
-    - Pasquier, Zarrella and Labib, 2018. Application of artificial neural networks to near-instant 
-        construction of short-term g-functions. Applied Thermal Engineering.
-        https://www.sciencedirect.com/science/article/abs/pii/S1359431118305921 
+    - Pasquier, P., Zarrella, A., & Labib, R. (2018). Application of artificial neural networks
+        to near-instant construction of short-term g-functions. Applied Thermal Engineering,
+        143, 910–921. https://doi.org/10.1016/j.applthermaleng.2018.07.137
 """
+function short_term_response(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf;
+    clamp::Bool = true)
 
-function g_short_term(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
-    #= 
-    DESCRIPTION OF INPUT VARIABLES:
+    # Validate the simulation-time parameters (physical inputs are validated in
+    # `_short_term_nodes`). `tf` is capped at the 7-day horizon, so every query below is an
+    # interpolation of the ANN nodes — never an extrapolation.
+    dt, tf = _validate_time(dt, tf; clamp = clamp)
 
-    For each input parameter, the range is:
+    # Native ANN transfer function on the 85 fixed nodes
+    _, g_nodes = _short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D;
+        clamp = clamp)
 
-            Description                 Parameter    min              max             unit
-    Ground thermal conductivity             ks       0.5              4               W/mK
-    Ground volumetric heat capacity         Cs       1.7e6            2.6e6           J/Km^3
-    Grout thermal conductivity              kg       0.5              3               W/mK
-    Grout volumetric heat capacity          Cg       1.7e6            2.6e6           J/Km^3
-    Pipe thermal conductivity               kp       0.4              0.4             W/mK
-    Pipe volumetric heat capacity           Cp       1.9e6            1.9e6           J/Km^3
-    Fluid volumetric heat capacity          Cf       4.2e6            4.2e6           J/Km^3
-    Inner pipe radius                       ri       0.017            0.017           m
-    Outer pipe radius                       ro       0.022            0.022           m
-    Borehole radius                         rb       2(ro)+2e-3       0.1             m
-    Borehole length                         H        110              200             m
-    Fluid flow rate                         V̇        3.33e-4          5.0e-4          m^3/s
-    Half shank spacing                      D        0.02(rb-2ro)+ro  0.98(rb-2ro)+ro m
-    Simulation time step                    dt       15               24*3600         s
-    Simulation duration                     tf       15               7*24*3600       s
+    # Uniform time vector and shape-preserving (PCHIP) interpolation onto it. `t` and `g` share
+    # the same length by construction.
+    t = collect(dt:dt:tf)
+    itp = Interpolator(_ST_NODES, g_nodes)
+    g = itp.(t)
 
-    =#
-
-    # 1.0 - Validation of input parameters
-
-    # p is an array containing the 8 parameters used to compute the transfer function 
-    p = input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
-
-    # 2.0 - Initialization of variables
-
-    # 2.1 - Assembly of time vector
-    t = [min(dt, 24 * 3600):dt:tf;]
-
-    # 2.2 - Timestamp
-
-    # This timestamp follow a geometric progression, and the artificial neural network has been 
-    # trained on it to reproduce the transfer function
-    ts = [
-        15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 180, 195, 225, 240, 270, 300, 345, 390,420, 
-        480, 540, 600, 660, 750, 840, 930, 1035, 1170, 1305, 1470, 1620, 1830, 2040, 2280, 2535, 
-        2865, 3180, 3570, 3975, 4470, 4965, 5580, 6210, 6975, 7755, 8730, 9690, 10905, 12120, 13635,
-        15150, 17040, 18930, 21300, 23670, 26625, 29580, 33285, 36975, 41595, 46215, 52005, 57780, 
-        64995, 72225, 81255, 90285, 101565, 112845, 126960, 141060, 158685, 176325, 198360, 220410, 
-        247950, 275505, 309945, 344385, 387435, 430485, 484290, 538095, 571455, 604800
-        ]
-
-    # 3.0 - Construction of the short-term (ST) transfer function 
-
-    # g_raw contain the 85 raw values calculated with the trained artificial neural network
-    g_raw = 1 ./ (exp.(TRCM_ANN(p)) ./ ts) .- 1
-    g_raw[g_raw.<0] .= 0
-
-    # 4.0 - Interpolation of transfer function
-
-    # Interpolation with the PCHIP Interpolator, using the timestamp ts (array 85x1), and the g_raw 
-    # array (85x1). Creates an array containing the interpolated values
-    
-    itp = Interpolator(ts, g_raw)
-    gST = itp.(t)
-
-
-    # 5.0 - Assembly of the Entering Water Temperature variables 
-
-    t_EWT = t[t.<=last(ts)] # timestep
-    g_EWT = gST # transfer function
-
-    return t_EWT, g_EWT, g_raw
+    return t, g
 end
 
 """
-    input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
+    _short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp=true)
 
-The input parameter validation function validates if the given parameters are in their specific 
-range, for which the ANN has been trained.  
-# Arguments
-    - `ks`: Ground thermal conductivity [W/mK]
-    - `Cs`: Ground volumetric heat capacity [J/Km^3]
-    - `kg`: Grout thermal conductivity [W/mK]
-    - `Cg`: Grout volumetric heat capacity [J/Km^3]
-    - `kp`: Pipe thermal conductivity [W/mK]
-    - `Cp`: Pipe volumetric heat capacity [J/Km^3]
-    - `Cf`: Fluid volumetric heat capacity [J/Km^3]
-    - `ri`: Inner pipe radius [m]
-    - `ro`: Outer pipe radius [m]
-    - `rb`: Borehole radius [m]
-    - `H`: Borehole length [m]
-    - `V̇`: Fluid flow rate [m^3/s]
-    - `D`: Half shank spacing [m]
-    - `dt`: Simulation time step [s]
-    - `tf`: Simulation duration [s]
-# Output
-    -`out_of_range`: boolean value (true if at least one parameter is out of range, and false if all 
-        the parameters are inside their respective range)
-    -`p`: array containing the 8 parameters used to compute the transfer function
+Evaluate the ANN on its 85 native time nodes (`_ST_NODES`), returning `(_ST_NODES, g)` where
+`g` is the raw short-term transfer function before interpolation. Building block shared by
+`short_term_response` and by the short-/long-term join `outlet_transfer_function`
+(GroundHeatExchanger.jl). Inverts the training transformation `y = ln(t̃ / (g + 1))`.
 """
-function input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
+function _short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp::Bool = true)
+    p = _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp = clamp)
+    g = 1 ./ (exp.(_ann_forward(p)) ./ _ST_NODES) .- 1
+    g[g.<0] .= 0
+    return _ST_NODES, g
+end
 
-    # The 15x2 p_limit matrix contains the respective range of the parameters 
+"""
+    _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp=true)
+
+Check the 13 physical inputs against the ANN training ranges. When `clamp` is `true`,
+out-of-range values are `@warn`ed and clamped to the nearest bound; when `false`, an `@error`
+is emitted and an `ArgumentError` is thrown. Returns the 8-element parameter vector
+`[ks, Cs, kg, Cg, rb, H, V̇, D]` consumed by the network.
+"""
+function _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp::Bool = true)
+
+    # Lower/upper bound of every physical parameter (see the validity ranges in the docstring
+    # of `short_term_response`).
     p_limit = [
         0.5                 4;                 # ks
         1.7e6               2.6e6;             # Cs
@@ -143,146 +120,126 @@ function input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt,
         4.2e6               4.2e6;             # Cf
         0.017               0.017;             # ri
         0.022               0.022;             # ro
-        2*ro+2e-3           0.1;               # rb
+        2 * ro + 2e-3       0.1;               # rb
         110                 200;               # H
-        3.33e-4             5.0e-4 ;           # V̇
-        0.02*(rb-2*ro)+ro   0.98*(rb-2*ro)+ro; # D
-        15                  24*3600;           # dt
-        15                  7*24*3600          # tf
-        ]
+        3.33e-4             5.0e-4;            # V̇
+        0.02 * (rb - 2 * ro) + ro   0.98 * (rb - 2 * ro) + ro   # D
+    ]
 
-    # Vectors containing the parameters, their names, and units
-    params = [ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf]
-    p_names = ["ks", "Cs", "kg", "Cg", "kp", "Cp", "Cf", "ri", "ro", "rb", "H", "V̇", "D", "dt","tf"]
-    p_units = ["W/mK", "J/Km^3", "W/mK", "J/Km^3", "W/mK", "J/Km^3", "J/Km^3", "m", "m",
-        "m", "m", "m^3/s", "m", "s", "s"]
+    params = [ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D]
+    p_names = ["ks", "Cs", "kg", "Cg", "kp", "Cp", "Cf", "ri", "ro", "rb", "H", "V̇", "D"]
+    p_units = ["W/mK", "J/Km³", "W/mK", "J/Km³", "W/mK", "J/Km³", "J/Km³", "m", "m", "m", "m",
+        "m³/s", "m"]
 
-    # Boolean variable is either true (1) if the value of the parameter is out of range or false (0)
-    # if the value is in range
-    out_of_range = false
     for i in eachindex(params)
-        if params[i] < p_limit[i, 1] # the parameter is smaller than the min
-            @warn "Parameter $(p_names[i]) was changed from $(params[i]) $(p_units[i]) to $(p_limit[i, 1]) $(p_units[i]) to fit the ANN's bounds"
-            params[i] = p_limit[i, 1] # replace with the min value
-            out_of_range = true
-        elseif params[i] > p_limit[i, 2] # the parameter is bigger than the max
-            @warn "Parameter $(p_names[i]) was changed from $(params[i]) $(p_units[i]) to $(p_limit[i, 2]) $(p_units[i]) to fit the ANN's bounds"
-            params[i] = p_limit[i, 2] # replace with the max value
-            out_of_range = true
+        lo, hi = p_limit[i, 1], p_limit[i, 2]
+        if params[i] < lo || params[i] > hi
+            bound = params[i] < lo ? lo : hi
+            msg = "Parameter $(p_names[i]) = $(params[i]) $(p_units[i]) is outside the ANN " *
+                  "training range [$lo, $hi] $(p_units[i])"
+            if clamp
+                @warn "$msg — clamped to $bound $(p_units[i])"
+                params[i] = bound
+            else
+                @error msg
+                throw(ArgumentError(msg))
+            end
         end
     end
 
-    # The 8 parameters of the transfer function
-    p = [
-        params[1], # ks
-        params[2], # Cs
-        params[3], # kg
-        params[4], # Cg
-        params[10], # rb
-        params[11], # H
-        params[12], # V̇
-        params[13] # D
-    ]
-
-    return p
-
+    # The 8 parameters fed to the network: ks, Cs, kg, Cg, rb, H, V̇, D
+    return params[[1, 2, 3, 4, 10, 11, 12, 13]]
 end
 
 """
-    TRCM_ANN(x1)
+    _validate_time(dt, tf; clamp=true)
 
-The Thermal Resistance and Capacity Model's Artificial Neural Network function performs a 
-simulation, using the weights and biases of a trained artificial neural network, to generate the 
-transfer function. It is based on the MATLAB Neural Network Toolbox function genFunction.
-# Arguments
-    - `x1`: array of the 8 paramaters (ks, Cs, kg, Cg, rb, H, V̇, D)
-# Output
-    -`y1`: array of the 85 points corresponding to the transfer function
-# Reference
-    - MATLAB. genFunction.
-        https://www.mathworks.com/help/deeplearning/ref/network.genfunction.html
+Check the time step `dt` (15 s – 24 h) and duration `tf` (15 s – 7 days) against the ANN
+short-term limits, applying the same `clamp` policy as `_input_validation`. Returns the
+(possibly clamped) `(dt, tf)`.
 """
-function TRCM_ANN(x1)
+function _validate_time(dt, tf; clamp::Bool = true)
+    limits = (("dt", dt, 15, 24 * 3600), ("tf", tf, 15, 7 * 24 * 3600))
+    out = Float64[]
+    for (name, val, lo, hi) in limits
+        if val < lo || val > hi
+            bound = val < lo ? lo : hi
+            msg = "Simulation parameter $name = $val s is outside the valid range [$lo, $hi] s"
+            if clamp
+                @warn "$msg — clamped to $bound s"
+                val = bound
+            else
+                @error msg
+                throw(ArgumentError(msg))
+            end
+        end
+        push!(out, val)
+    end
+    return out[1], out[2]
+end
 
-    # ===== SIMULATION ========
+"""
+    _ann_forward(x1)
 
-    # Dimensions
-    # Q = 1
-
-    # Input 1 
-    xp1 = step1(x1, x1_step1)
-
-    # Layer 1
+Forward pass of the trained multilayer perceptron: two tanh hidden layers and a linear output
+layer, with min–max scaling on the input and inverse scaling on the output. Maps the
+8-parameter vector `x1 = [ks, Cs, kg, Cg, rb, H, V̇, D]` to the 85 transformed transfer-function
+values. Ported from the MATLAB Neural Network Toolbox `genFunction` output.
+"""
+function _ann_forward(x1)
+    # Input scaling
+    xp1 = _mapminmax_apply(x1, _input_scaler)
+    # Hidden layer 1
     a1 = tanh.(b1 + IW1_1 * xp1)
-
-    # Layer 2
+    # Hidden layer 2
     a2 = tanh.(b2 + LW2_1 * a1)
-
-    # Layer 3
+    # Output layer (linear)
     a3 = b3 + LW3_2 * a2
-
-    # Output 1
-    y1 = step2(a3, y1_step1)
-
+    # Output inverse scaling
+    y1 = _mapminmax_reverse(a3, _output_scaler)
     return y1
 end
 
-# ===== ARTIFICIAL NEURAL NETWORK FUNCTIONS ========
+# ===== ARTIFICIAL NEURAL NETWORK SCALING =====
 
 """
-    step1(x,constants)
+    _mapminmax_apply(x, scaler)
 
-This function is used to perform the simulation of the artificial neural network. The step1 function
-is equivalent to the mapminmax_apply function in MATLAB and performs element-wise operations (minus,
-times, plus). It is the first step of the ANN's simulation.
-# Arguments
-    -`x`: array of the 8 paramaters (ks, Cs, kg, Cg, rb, H, V̇, D)
-    -`constants`: struct containing the constants needed to performs the simulation (xoffset, gain, 
-        ymin) 
-# Output
-    -`y`: array containing the 8 transformed paramaters
+Forward min–max scaling (MATLAB `mapminmax_apply`): `y = (x - xoffset) * gain + ymin`. First
+step of the network simulation.
 """
-function step1(x, constants)
-    y = x .- constants.xoffset
-    y .*= constants.gain
-    y .+= constants.ymin
+function _mapminmax_apply(x, scaler)
+    y = x .- scaler.xoffset
+    y .*= scaler.gain
+    y .+= scaler.ymin
     return y
-
 end
 
 """
-    step2(y,constants)
+    _mapminmax_reverse(y, scaler)
 
-This functions is used to perform the simulation of the artificial neural network. The step2 
-function is equivalent to the mapminmax_reverse function in MATLAB and performs element-wise 
-operations (minus, division, plus). It is the last step of the ANN's simulation.
-# Arguments
-    -`y`: (85x1) array of points generated from preceding steps
-    -`constants`: struct containing the constants needed to performs the simulation (xoffset, gain, 
-        ymin)
-# Output
-    -`x`: array of the 85 points corresponding to the transfer function
+Inverse min–max scaling (MATLAB `mapminmax_reverse`): `x = (y - ymin) / gain + xoffset`. Last
+step of the network simulation.
 """
-function step2(y, constants)
-    x = y .- constants.ymin
-    x ./= constants.gain
-    x .+= constants.xoffset
+function _mapminmax_reverse(y, scaler)
+    x = y .- scaler.ymin
+    x ./= scaler.gain
+    x .+= scaler.xoffset
     return x
-
 end
 
 # ===== ARTIFICIAL NEURAL NETWORK CONSTANTS =====
 
-# struct containing all the element used to adjust the variable during the simulation of the 
-# artificial neural network
-struct var_adjustment
+# Min–max scaler holding the offset, gain and target minimum used to normalise the network
+# input and de-normalise its output.
+struct _MinMaxScaler
     xoffset::Vector{Float64}
     gain::Vector{Float64}
     ymin::Int8
 end
 
 # Input 1
-const x1_step1 = var_adjustment(
+const _input_scaler = _MinMaxScaler(
     [
         0.500206300411479;
         1700042.23726511;
@@ -307,7 +264,7 @@ const x1_step1 = var_adjustment(
 )
 
 # Output 1
-const y1_step1 = var_adjustment(
+const _output_scaler = _MinMaxScaler(
     [
         2.70804796159013; 
         3.40101433345721; 

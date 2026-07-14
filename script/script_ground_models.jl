@@ -6,8 +6,8 @@ using CairoMakie
 using GroundResponse
 
 # Ground and borehole parameters
-H  = 150.0   # Borehole depth [m]
-D  = 4.0     # Buried depth [m]
+H = 150.0   # Borehole depth [m]
+D = 4.0     # Buried depth [m]
 rb = 0.076   # Borehole radius [m]
 ks = 3.0     # Ground thermal conductivity [W/mK]
 Cs = 2.0e6   # Ground volumetric heat capacity [J/m³K]
@@ -18,11 +18,11 @@ vD = 1e-7    # Darcy velocity [m/s]
 t = 3600.0 .* exp10.(range(log10(0.1), log10(8760 * 25), length = 300))
 
 # Single-borehole g-functions at the borehole wall
-g_ils  = ils(t, rb, ks, Cs)
-g_ics  = ics(t, rb, rb, ks, Cs)
-g_fls  = fls(t, rb, H, D, ks, Cs)
-g_mils = mils(t, [0.0, 0.0], rb, ks, Cs, Cf, vD)
-g_mfls = mfls(t, [0.0, 0.0], H, rb, D, ks, Cs, Cf, vD)
+g_ils = ils(t, rb, ks, Cs)
+g_ics = ics(t, rb, rb, ks, Cs)
+g_fls = fls(t, rb, H, D, ks, Cs)
+g_mils = mils(t, rb, 0.0, rb, ks, Cs, Cf, vD)          # self response at the wall (r = rb)
+g_mfls = mfls(t, rb, 0.0, H, rb, D, ks, Cs, Cf, vD)
 
 t̃ = t ./ (3600 * 8760)   # Time in years
 

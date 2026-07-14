@@ -14,7 +14,7 @@ wall temperature.
             to different radius and rows to different time steps.
         - If `r` is a 2D array, the output will be a 3D array of g-function with dimensions
             corresponding to (time, x and y) coordinates of the borefield. The radius matrix can
-            be computed with `borefield_radius()` from borefield.jl.
+            be computed with `borefield_geometry()` from borefield.jl.
     - `rc`: Radius of the cylinder [m]
     - `ks`: Ground thermal conductivity [W/mK]
     - `Cs`: Ground volumetric specific heat [J/m³K]

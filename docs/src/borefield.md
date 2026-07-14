@@ -1,8 +1,8 @@
 # Borefields
 
 Spatial superposition needs the coordinates of every borehole in the field. This page documents the
-layout generators that produce those coordinates and the [`borefield_radius`](@ref) helper that
-turns them into the pairwise-distance matrix consumed by [`successive_flux`](@ref) and
+layout generators that produce those coordinates and the [`borefield_geometry`](@ref) helper that
+turns them into the pairwise distance and angle matrices consumed by [`successive_flux`](@ref) and
 [`bloc_matrix`](@ref).
 
 ## Coordinate convention
@@ -46,20 +46,23 @@ xy = borefield_circle(8, 10.0)
 
 An unknown shape symbol raises an `ArgumentError` listing the valid options.
 
-## The pairwise-radius helper
+## The pairwise-geometry helper
 
-[`borefield_radius`](@ref) computes the geometry that spatial superposition operates on. Given the
-coordinates and the borehole radius it returns the pairwise-distance matrix `r` (with the diagonal
-set to `rb`), its flattened vector `rᵥ`, the unique distances `rᵤ`, the index map `rᵢ` back into the
-matrix, the azimuth angles `θ`, and the borehole count `nb`. The unique-distance reduction is what
-lets the conductive models evaluate the (often expensive) kernel only once per distinct distance and
-then scatter the result across the full ``n_b \times n_b`` array.
+[`borefield_geometry`](@ref) computes the geometry that spatial superposition operates on. Given the
+coordinates and the borehole radius it returns the pairwise distance matrix `r` (with the diagonal
+set to `rb`), the flow-relative angle matrix `θ` in degrees (with the diagonal set to `0`), the
+unique `(r, θ)` pairs `keys`, the index map `idx` from each borehole pair to its unique key, and the
+per-key pair `counts`. The isotropic models (ILS, ICS, FLS) use only `r`; the moving models (MILS,
+MFLS) additionally use `θ`, because under groundwater flow the pairwise response is asymmetric and
+depends on both the separation and the angle to the flow. The unique-pair reduction lets the
+(often expensive) kernels evaluate each distinct geometry only once and then scatter the result
+across the full ``n_b \times n_b`` array.
 
 ## Functions on this page
 
 ```@docs
 borefield
-borefield_radius
+borefield_geometry
 borefield_rectangle
 borefield_line
 borefield_circle

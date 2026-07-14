@@ -1,24 +1,119 @@
-# Validation script that compute five g functions with julia's g_short_term function and compares
-# it with matlab's gST_ANN function.
+# script_short_term.jl
+# ---------------------------------------------------------------------------
+# Short-term outlet / entering-water-temperature (EWT) transfer function
+# `short_term_response` (Pasquier, Zarrella & Labib, 2018): validation against the
+# reference MATLAB implementation (ANN_gfunction.m) and a usage example.
+#
+# This single file consolidates the former `script/g_short_term/` trio
+# (dataset_validation.jl + script_validation_short_term.jl + script_short_term.jl).
+#
+#   Section 1 - Validation datasets (5 cases spanning the ANN training range)
+#   Section 2 - MATLAB reference outputs (85-point raw g-function per case)
+#   Section 3 - Validation: recompute and compare (isapprox, prints results)
+#   Section 4 - Usage example and figure (short-term transfer function)
+#
+# Reference
+#   Pasquier, P., Zarrella, A., & Labib, R. (2018). Application of artificial
+#   neural networks to near-instant construction of short-term g-functions.
+#   Applied Thermal Engineering, 143, 910-921.
+# ---------------------------------------------------------------------------
 
-include("../../src/g_short_term.jl")
-include("dataset_validation.jl")
+import Pkg; Pkg.activate(@__DIR__)
 
-# The g_raw (85x1) arrays contain the g function's points before the interpolation, computed with 
-# julia's function
-_, _, g_raw_1 = g_short_term(ks_1, Cs_1, kg_1, Cg_1, kp_1, Cp_1, Cf_1, ri_1, ro_1, rb_1, H_1, V̇_1, 
-                              D_1, dt_1, tf_1)
-_, _, g_raw_2 = g_short_term(ks_2, Cs_2, kg_2, Cg_2, kp_2, Cp_2, Cf_2, ri_2, ro_2, rb_2, H_2, V̇_2, 
-                              D_2, dt_2, tf_2)
-_, _, g_raw_3 = g_short_term(ks_3, Cs_3, kg_3, Cg_3, kp_3, Cp_3, Cf_3, ri_3, ro_3, rb_3, H_3, V̇_3, 
-                              D_3, dt_3, tf_3)
-_, _, g_raw_4 = g_short_term(ks_4, Cs_4, kg_4, Cg_4, kp_4, Cp_4, Cf_4, ri_4, ro_4, rb_4, H_4, V̇_4, 
-                              D_4, dt_4, tf_4)
-_, _, g_raw_5 = g_short_term(ks_5, Cs_5, kg_5, Cg_5, kp_5, Cp_5, Cf_5, ri_5, ro_5, rb_5, H_5, V̇_5, 
-                              D_5, dt_5, tf_5)
+using CairoMakie
+using GroundResponse
 
-# The g_raw_m (85x1) arrays contains the g function's point before the interpolation, computed with 
-# matlab's function
+# ===========================================================================
+# Section 1 - Validation datasets (min, three mixed, max; spanning Table 2)
+# ===========================================================================
+
+# 1 - First data set (min values)
+ks_1=0.5
+Cs_1=1.7e6
+kg_1=0.5
+Cg_1=1.7e6
+kp_1=0.4
+Cp_1=1.9e6
+Cf_1=4.2e6
+ri_1=0.017
+ro_1=0.022
+rb_1= 2ro_1+2e-3 
+H_1=110
+V̇_1=3.34e-4
+D_1=0.02(rb_1-2ro_1)+ro_1
+dt_1=15 
+tf_1=15
+
+# 2 - Second data set 
+ks_2=1.375
+Cs_2=1.925e6
+kg_2=1.125
+Cg_2=1.925e6
+kp_2=0.4
+Cp_2=1.9e6
+Cf_2=4.2e6
+ri_2=0.017
+ro_2=0.022
+rb_2= 0.0595
+H_2=132.5
+V̇_2=3.75e-4
+D_2=0.03136
+dt_2=15
+tf_2=151211.25
+
+# 3 - Third data set
+ks_3=2.25
+Cs_3=2.15e6
+kg_3=1.75
+Cg_3=2.15e6
+kp_3=0.4
+Cp_3=1.9e6
+Cf_3=4.2e6
+ri_3=0.017
+ro_3=0.022
+rb_3= 0.073
+H_3=155.0
+V̇_3=4.17e-4
+D_3=0.04
+dt_3=43207.5
+tf_3=302407.5
+
+# 4 - Fourth data set
+ks_4=3.125
+Cs_4=2.375e6
+kg_4=2.375
+Cg_4=2.375e6
+kp_4=0.4
+Cp_4=1.9e6
+Cf_4=4.2e6
+ri_4=0.017
+ro_4=0.022
+rb_4= 0.087
+H_4=177.5
+V̇_4=4.59e-4
+D_4=0.04864
+dt_4=64803.75
+tf_4=453603.75
+
+# 5 - Fifth data set (max values)
+ks_5=4
+Cs_5=2.0e6
+kg_5=3
+Cg_5=2.0e6
+kp_5=0.4
+Cp_5=1.9e6
+Cf_5=4.2e6
+ri_5=0.017
+ro_5=0.022
+rb_5=0.1
+H_5=200
+V̇_5=5.0e-4
+D_5=0.98(rb_5-2ro_5)+ro_5
+dt_5= 86400
+tf_5= 604800
+# ===========================================================================
+# Section 2 - MATLAB reference outputs (ANN_gfunction.m, 85-point raw g)
+# ===========================================================================
 g_raw_1m = [     
    0.000001116570953,
    0.000020782328099,
@@ -455,11 +550,62 @@ g_raw_5m = [
    1.572839212396244
 ]
 
-# Comparison of the five raw dataset obtain from julia's function and matlab's function, using the 
-# isapprox function (≈)
+# ===========================================================================
+# Section 3 - Validation: recompute with GroundResponse and compare
+# ===========================================================================
 
-g_raw_1m ≈ g_raw_1
-g_raw_2m ≈ g_raw_2
-g_raw_3m ≈ g_raw_3
-g_raw_4m ≈ g_raw_4
-g_raw_5m ≈ g_raw_5
+datasets = [
+    (ks_1, Cs_1, kg_1, Cg_1, kp_1, Cp_1, Cf_1, ri_1, ro_1, rb_1, H_1, V̇_1, D_1, dt_1, tf_1),
+    (ks_2, Cs_2, kg_2, Cg_2, kp_2, Cp_2, Cf_2, ri_2, ro_2, rb_2, H_2, V̇_2, D_2, dt_2, tf_2),
+    (ks_3, Cs_3, kg_3, Cg_3, kp_3, Cp_3, Cf_3, ri_3, ro_3, rb_3, H_3, V̇_3, D_3, dt_3, tf_3),
+    (ks_4, Cs_4, kg_4, Cg_4, kp_4, Cp_4, Cf_4, ri_4, ro_4, rb_4, H_4, V̇_4, D_4, dt_4, tf_4),
+    (ks_5, Cs_5, kg_5, Cg_5, kp_5, Cp_5, Cf_5, ri_5, ro_5, rb_5, H_5, V̇_5, D_5, dt_5, tf_5),
+]
+references = [g_raw_1m, g_raw_2m, g_raw_3m, g_raw_4m, g_raw_5m]
+
+println("Short-term g-function validation vs. MATLAB ANN_gfunction (Pasquier et al., 2018)")
+println("-"^80)
+all_pass = true
+for (i, (p, ref)) in enumerate(zip(datasets, references))
+    # `_short_term_nodes` returns the 85 raw ANN values (before interpolation); it takes only
+    # the 13 physical inputs, so drop the dt/tf entries of each dataset tuple.
+    _, g_raw = GroundResponse._short_term_nodes(p[1:13]...)
+    Δ = abs.(g_raw .- ref)
+    pass = isapprox(g_raw, ref)
+    global all_pass &= pass
+    println("Case $i: ", pass ? "PASS" : "FAIL",
+        "   max|Δ| = ", round(maximum(Δ); sigdigits = 3),
+        "   mean|Δ| = ", round(sum(Δ) / length(Δ); sigdigits = 3))
+end
+println("-"^80)
+println(all_pass ? "All 5 cases reproduce the MATLAB reference to machine precision." :
+                   "At least one case deviates from the reference - investigate.")
+
+# ===========================================================================
+# Section 4 - Usage example and figure (short-term transfer function)
+# ===========================================================================
+
+# Representative single borehole (thermal-response-test case of Table 1)
+ks = 2.13;  Cs = 2.0e6            # ground
+kg = 1.65;  Cg = 2.0e6            # grout
+kp = 0.4;   Cp = 1.9e6            # pipe
+Cf = 4.2e6                       # fluid
+ri = 0.017; ro = 0.022; rb = 0.08
+H  = 150.0
+V̇  = 23.7 / 1000 / 60            # 23.7 L/min -> m^3/s
+D  = 0.029
+dt = 15.0                        # 15 s time step
+tf = 7 * 24 * 3600.0             # 7 days (ANN validity horizon)
+
+t_EWT, g_EWT = short_term_response(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
+
+ts_char = H^2 / (9 * ks / Cs)    # characteristic time t_s = H^2 / (9 alpha)
+
+fig = Figure()
+ax = Axis(fig[1, 1];
+    title  = "Short-term transfer function (ANN, Pasquier et al. 2018)",
+    xlabel = "t / t_s  (-)",
+    ylabel = "g  (-)",
+    xscale = log10)
+lines!(ax, t_EWT ./ ts_char, g_EWT; color = :blue, linewidth = 1.4)
+fig

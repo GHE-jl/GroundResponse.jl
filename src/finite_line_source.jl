@@ -28,14 +28,14 @@ wall temperature.
 """
 function fls(t::Real, r::Real, H::Real, D::Real, ks::Real, Cs::Real)
     T = float(promote_type(typeof(t), typeof(r), typeof(H), typeof(D), typeof(ks), typeof(Cs)))
-    return _fls(T(t), T(H), T(r), T(D), T(ks), T(Cs))
+    return _fls(T(t), T(r), T(H), T(D), T(ks), T(Cs))
 end
 function fls(t::AbstractVector{<:Real}, r::Real, H::Real, D::Real, ks::Real, Cs::Real)
     T = float(promote_type(eltype(t), typeof(r), typeof(H), typeof(D), typeof(ks), typeof(Cs)))
     t_T = convert(Vector{T}, t)
     g = similar(t_T)
     @inbounds @simd for i in eachindex(t_T)
-        g[i] = _fls(t_T[i], T(H), T(r), T(D), T(ks), T(Cs))
+        g[i] = _fls(t_T[i], T(r), T(H), T(D), T(ks), T(Cs))
     end
     return g
 end
@@ -43,7 +43,7 @@ function fls(t::Real, r::AbstractVector{<:Real}, H::Real, D::Real, ks::Real, Cs:
     T = float(promote_type(typeof(t), eltype(r), typeof(H), typeof(D), typeof(ks), typeof(Cs)))
     g = similar(r)
     @inbounds @simd for i in eachindex(r)
-        g[i] = _fls(T(t), T(H), T(r[i]), T(D), T(ks), T(Cs))
+        g[i] = _fls(T(t), T(r[i]), T(H), T(D), T(ks), T(Cs))
     end
     return g
 end
@@ -54,7 +54,7 @@ function fls(t::AbstractVector{<:Real}, r::AbstractVector{<:Real}, H::Real, D::R
     g = Matrix{T}(undef, length(t_T), length(r))
     @inbounds @simd for i in eachindex(r)
         for j in eachindex(t_T)
-            g[j, i] = _fls(t_T[j], T(H), T(r[i]), T(D), T(ks), T(Cs))
+            g[j, i] = _fls(t_T[j], T(r[i]), T(H), T(D), T(ks), T(Cs))
         end
     end
     return g
@@ -94,30 +94,30 @@ end
 Inverse "erf" function used in the finite line source model.
 """
 function _ierf(x::T) where {T<:AbstractFloat}
-    return x * erf(x) - inv(sqrt(T(π))) * (one(T) - exp(-x^2))
+    return x * erf(x) - (one(T) - exp(-x^2)) * inv(sqrt(T(π)))
 end
 
 """
-    _fls_integrand(s, H, r, D)
+    _fls_integrand(s, r, H, D)
 
 Computes the integrand of the finite line source model.
 """
-function _fls_integrand(s::T, H::T, r::T, D::T) where {T<:AbstractFloat}
+function _fls_integrand(s::T, r::T, H::T, D::T) where {T<:AbstractFloat}
     fun = (2 * _ierf(H * s)) + (2 * _ierf((H * s) + (2 * D * s))) -
         _ierf((2 * H * s) + (2 * D * s)) - _ierf(2 * D * s)
     return (exp(-r^2 * s^2) * fun) / (H * s^2)
 end
 
 """
-    _fls(t, H, r, D, ks, Cs)
+    _fls(t, r, H, D, ks, Cs)
 
 Kernel function for the finite line source model based on Claesson and Javed (2011). The response
 function is based on an impulse of 1 W/m.
 """
-function _fls(t::T, H::T, r::T, D::T, ks::T, Cs::T) where {T<:AbstractFloat}
+function _fls(t::T, r::T, H::T, D::T, ks::T, Cs::T) where {T<:AbstractFloat}
     α = ks / Cs
     lower_lim = inv(sqrt(4 * α * t))
-    integral, _ = quadgk(s -> _fls_integrand(s, H, r, D), lower_lim, T(Inf), rtol = T(1e-6))
+    integral, _ = quadgk(s -> _fls_integrand(s, r, H, D), lower_lim, T(Inf), rtol = T(1e-6))
     return integral / (4 * T(π) * ks)
 end
 

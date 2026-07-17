@@ -34,6 +34,8 @@ The models implemented in this package are drawn from the following sources.
 
 ## Borefield spatial superposition
 
+\TODO: Update references here.
+
 - **Dusseault, B., Pasquier, P., & Marcotte, D.** (2018). A block matrix formulation for efficient
   g-function construction. *Renewable Energy*, 121, 249–260.
   <https://doi.org/10.1016/j.renene.2017.12.092>

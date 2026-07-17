@@ -91,7 +91,8 @@ Keywords:
   - `:III` — flux varies within each borehole for a uniform wall temperature (`FLSModel` with
     `nseg > 1`; the default when `nseg > 1`).
 - **`solver`** — backend for the chosen `bc`: for `:II`, `:successive` (default) or `:block`; for
-  `:III`, `:block` (default) or `:marching`.
+  `:III`, `:marching` (default) or `:block`. (For an `FLSModel` with `nseg > 1`, `bc` and `solver`
+  default to `:III` and `:marching`.)
 - **`interp`** (default `true`) — compute on an internal constant-step sub-sampling grid and
   PCHIP-interpolate to `t`. **One keyword, two roles**:
   - for the **temporal** solvers (`:successive`, `:marching`) it is a *correctness* requirement on
@@ -129,7 +130,7 @@ g = ground_response(t, rb, xy, m_mfls)
 
 Several methods compute the borefield g-function from single-borehole responses. Each accepts either
 a precomputed `nt × nb × nb` g-matrix (low-level kernel) or borefield parameters with any
-`AbstractGroundModel` (high-level, dispatching through `_response_array`):
+`AbstractGroundModel` (high-level, dispatching through `_borehole_response`):
 
 | Function | BC | Temporal treatment | `t`-spacing |
 |----------|----|--------------------|-------------|
@@ -176,13 +177,15 @@ corresponding layout function. All layout functions are also exported individual
 
 All functions return an `nb×2` matrix of borehole coordinates `[x y]`.
 
-`borefield_geometry(xy, rb)` returns `(r, θ, keys, idx, counts)`: the pairwise distance matrix
-(diagonal `rb`), the flow-relative angle matrix in degrees (diagonal `0`), the unique `(r, θ)`
-pairs, the index map from each borehole pair to its unique key, and the per-key pair counts.
+`borefield_geometry(xy, rb)` returns `(r, θ)`: the pairwise distance matrix (diagonal `rb`) and the
+flow-relative angle matrix in degrees (diagonal `0`). These two matrices are what the models
+consume. If you want to inspect a layout's geometric redundancy — the distinct `(r, θ)` combinations
+and how many borehole pairs share each — you can derive it directly from `r` and `θ` (see the
+`borefield_geometry` docstring for a copy-paste snippet).
 
 ## Extending with Custom Models
 
-Subtype `AbstractGroundModel` and add a single `_response_array` method returning the pairwise
+Subtype `AbstractGroundModel` and add a single `_borehole_response` method returning the pairwise
 `nt × nb × nb` response array. Every backend (`successive_flux`, `bloc_matrix`, `uniform_flux`) and
 the `ground_response` interface — including `interp` sub-sampling — then work automatically:
 
@@ -192,7 +195,7 @@ struct MyModel <: AbstractGroundModel
     Cs::Float64
 end
 
-function GroundResponse._response_array(t, rb, xy, m::MyModel)
+function GroundResponse._borehole_response(t, rb, xy, m::MyModel)
     r = borefield_geometry(xy, rb)[1]          # nb×nb distance matrix
     return my_gfunc(t, r, m.ks, m.Cs)          # nt × nb × nb
 end
@@ -263,9 +266,10 @@ pkg> add https://github.com/GeothermalJL/GroundResponse.jl
 - Guo, Y., Hu, X., Banks, J., & Liu, W. V. (2020). Considering buried depth in the moving finite line source model for vertical borehole heat exchangers — A new solution. *Energy and Buildings*, 214, 109859. https://doi.org/10.1016/j.enbuild.2020.109859
 - Guo, Y., Hu, X., Banks, J., & Liu, W. V. (2021). Considering buried depth for vertical borehole heat exchangers in a borehole field with groundwater flow — An extended solution. Energy and Buildings, 235, 110722. https://doi.org/10.1016/j.enbuild.2021.110722
 - Pasquier, P., & Lamarche, L. (2022). Analytic expressions for the moving infinite line source model. *Geothermics*, 103, 102413. https://doi.org/10.1016/j.geothermics.2022.102413
-- Pasquier, P., Zarrella, A., & Labib, R. (2018). Application of artificial neural networks to near-instant construction of short-term g-functions. *Applied Thermal Engineering*. https://doi.org/10.1016/j.applthermaleng.2018.04.078
+- Pasquier, P., Zarrella, A., & Labib, R. (2018). Application of artificial neural networks to near-instant construction of short-term g-functions. *Applied Thermal Engineering*, 143, 910–921. https://doi.org/10.1016/j.applthermaleng.2018.07.137
 
 ### Spatial Superposition
 
+- Cimmino, M. (2018). Fast calculation of the g-functions of geothermal borehole fields using similarities in the evaluation of the finite line source solution. *Journal of Building Performance Simulation*, 11(6), 655–668. https://doi.org/10.1080/19401493.2017.1423390
 - Dusseault, B., Pasquier, P., & Marcotte, D. (2018). A block matrix formulation for efficient g-function construction. *Renewable Energy*, 121, 249–260. https://doi.org/10.1016/j.renene.2017.12.092
 - Nguyen, A., & Pasquier, P. (2021). A successive flux estimation method for rapid g-function construction of small to large-scale ground heat exchanger. *Renewable Energy*, 165, 359–368. https://doi.org/10.1016/j.renene.2020.10.074

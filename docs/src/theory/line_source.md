@@ -1,7 +1,7 @@
 # Line-source models
 
-The three conductive models — infinite line source (ILS), infinite cylindrical source (ICS) and
-finite line source (FLS) — solve the transient heat-conduction equation in a homogeneous ground
+The three conductive models (infinite line source (ILS), infinite cylindrical source (ICS) and
+finite line source (FLS)) solve the transient heat-conduction equation in a homogeneous ground
 with **no groundwater flow**. They differ only in how faithfully they represent the geometry of the
 borehole: a zero-radius infinite line, a finite-radius infinite cylinder, or a finite-length line.
 All return the borehole-wall response normalised to a 1 W/m impulse, in °C·m/W.
@@ -15,15 +15,14 @@ The simplest model treats the borehole as an infinitely long line of zero radius
 response is the classical exponential-integral solution (Ingersol, 1948):
 
 ```math
-g_{\text{ILS}}(r, t) = \frac{1}{4\pi k_s}\, E_1\!\left(\frac{r^2}{4\alpha t}\right)
-= -\frac{1}{4\pi k_s}\, \mathrm{Ei}\!\left(-\frac{r^2}{4\alpha t}\right),
+g_{\text{ILS}}(r, t) = \frac{1}{4\pi k_s} E_1\!\left(\frac{r^2}{4\alpha t}\right),
 ```
 
 where ``E_1`` is the exponential integral (`expinti` from `SpecialFunctions.jl` supplies
-``\mathrm{Ei}``). The single dimensionless group is the **Fourier number** ``\mathrm{Fo} =
+``Ei``). The single dimensionless group is the **Fourier number** ``Fo =
 \alpha t / r^2``: the response depends on ``r`` and ``t`` only through this ratio.
 
-The ILS is accurate at intermediate times but overestimates the response at **short times**
+The ILS is accurate at intermediate but overestimates the response at **short times**
 (it ignores the finite borehole radius) and at **long times** for real boreholes (it ignores the
 finite depth). It is implemented in [`ils`](@ref) and is also the large-radius limit of the ICS.
 
@@ -36,7 +35,7 @@ functions:
 ```math
 g_{\text{ICS}}(r, t) = \frac{1}{\pi^2 k_s}\int_0^\infty
 \frac{\bigl(e^{-s^2\tilde t} - 1\bigr)\bigl(J_0(\tilde r s)\,Y_1(s) - Y_0(\tilde r s)\,J_1(s)\bigr)}
-     {s^2\bigl(J_1(s)^2 + Y_1(s)^2\bigr)}\, \mathrm{d}s,
+     {s^2\bigl(J_1^2(s) + Y_1^2(s)\bigr)}\, \mathrm{d}s,
 ```
 
 with the dimensionless radius ``\tilde r = r / r_c`` and dimensionless time
@@ -44,13 +43,10 @@ with the dimensionless radius ``\tilde r = r / r_c`` and dimensionless time
 second kind.
 
 The implementation in [`ics`](@ref) integrates this kernel with adaptive Gauss–Kronrod quadrature
-([`QuadGK.jl`](https://github.com/JuliaMath/QuadGK.jl)) and two numerical safeguards:
+([`QuadGK.jl`](https://github.com/JuliaMath/QuadGK.jl)) and has a numerical safeguard:
 
-- for ``\tilde r > 50`` the cylinder is indistinguishable from a line, so the function returns the
+- for ``\tilde r > 20`` the cylinder is indistinguishable from a line, so the function returns the
   ILS result directly;
-- for ``\tilde r > 1.5`` the oscillatory integrand is split at its half-periods ``\pi/\tilde r`` to
-  keep the quadrature stable; near ``\tilde r \approx 1`` the Wronskian identity makes the
-  integrand smooth and a single panel to ``\infty`` suffices.
 
 ## Finite line source (FLS)
 
@@ -62,20 +58,20 @@ borehole depth:
 
 ```math
 g_{\text{FLS}}(r, t) = \frac{1}{4\pi k_s}\int_{1/\sqrt{4\alpha t}}^{\infty}
-\frac{e^{-r^2 s^2}}{H s^2}\,\Phi(s)\, \mathrm{d}s,
+\frac{e^{-r^2 s^2}}{H s^2} \Phi(H,D,s) \mathrm{d}s,
 ```
 
 with the depth integral collapsed into
 
 ```math
-\Phi(s) = 2\,\mathrm{ierf}(Hs) + 2\,\mathrm{ierf}(Hs + 2Ds)
+\Phi(H,D,s) = 2\mathrm{ierf}(Hs) + 2\mathrm{ierf}(Hs + 2Ds)
         - \mathrm{ierf}(2Hs + 2Ds) - \mathrm{ierf}(2Ds),
 ```
 
 and the integrated error function
 
 ```math
-\mathrm{ierf}(x) = x\,\mathrm{erf}(x) - \frac{1}{\sqrt{\pi}}\bigl(1 - e^{-x^2}\bigr).
+\mathrm{ierf}(x) = x\mathrm{erf}(x) - \frac{1}{\sqrt{\pi}}\bigl(1 - e^{-x^2}\bigr).
 ```
 
 The four ``\mathrm{ierf}`` terms encode the real source over ``[D, D+H]`` and its mirror image

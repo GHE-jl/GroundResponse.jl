@@ -589,7 +589,7 @@ end
 
     @testset "Low-level array overload matches high-level — marching" begin
         m6 = FLSModel(H, D, ks, Cs, 6)
-        g3D, Hseg, Href = GroundResponse._segment_g_array(t, rb, xy22, m6)
+        g3D, Hseg, Href = GroundResponse._segment_g(t, rb, xy22, m6)
         g_ll = segment_response_marching(g3D, Hseg, Href)
         g_hl = segment_response_marching(t, rb, xy22, m6; interp=false)
         @test isapprox(g_ll, g_hl, rtol=1e-12)
@@ -598,14 +598,11 @@ end
 
 @testset "borefield_geometry" begin
     xy = borefield(:rectangle, 3, 2, 5.0)
-    r, θ, keys, idx, counts = borefield_geometry(xy, rb)
+    r, θ = borefield_geometry(xy, rb)
     nb = size(xy, 1)
-    @test size(r) == (nb, nb) && size(θ) == (nb, nb) && size(idx) == (nb, nb)
+    @test size(r) == (nb, nb) && size(θ) == (nb, nb)
     @test all(diag(r) .== rb)                      # self-distance on the diagonal equals rb
     @test all(diag(θ) .== 0)                       # angle 0 on the diagonal
-    @test size(keys, 2) == 2
-    @test sum(counts) == nb^2                      # every pair (incl. diagonal) grouped once
-    @test maximum(idx) == size(keys, 1)
     # downstream (+x) receiver has θ = 0°, upstream θ = 180°
     xline = borefield(:line, 3, 5.0)               # (0,0),(5,0),(10,0)
     _, θl, = borefield_geometry(xline, rb)
@@ -686,10 +683,9 @@ end
     @testset "borefield_geometry — output shape and diagonal (rb, 0°)" begin
         xy = borefield(:rectangle, 3, 3, B)
         nb = size(xy, 1)
-        r, θ, keys, idx, counts = borefield_geometry(xy, rb)
+        r, θ = borefield_geometry(xy, rb)
         @test size(r) == (nb, nb)
         @test size(θ) == (nb, nb)
-        @test size(idx) == (nb, nb)
         for i in 1:nb
             @test r[i, i] == rb
             @test θ[i, i] == 0
@@ -772,11 +768,15 @@ end
         @test all(g22 .< g1)
     end
 
-    @testset "FLSModel(nseg>1) routes to BC-III segment_response" begin
+    @testset "FLSModel(nseg>1) routes to BC-III (marching by default)" begin
         m4 = FLSModel(H, D, ks, Cs, 4)
+        # nseg > 1 defaults to bc = :III with the marching solver
         @test isapprox(ground_response(t, rb, xy22, m4; interp=false),
+                       segment_response_marching(t, rb, xy22, m4; interp=false), rtol=1e-12)
+        # the block :III solver is still reachable explicitly
+        @test isapprox(ground_response(t, rb, xy22, m4; solver=:block, interp=false),
                        segment_response(t, rb, xy22, m4), rtol=1e-12)
-        # single borehole with nseg > 1 also goes through the segment solve
+        # a single borehole evaluates the whole-borehole FLS kernel directly (nseg is ignored)
         g_single = ground_response(t, rb, xy1, m4)
         @test all(isfinite, g_single) && all(g_single .> 0) && all(diff(g_single) .> 0)
     end
@@ -798,10 +798,12 @@ end
                        bloc_matrix(t, rb, xy22, m), rtol=1e-12)
         @test isapprox(ground_response(t, rb, xy22, m),
                        ground_response(t, rb, xy22, m; bc=:II, solver=:successive), rtol=1e-12)
-        # BC-III :marching → segment_response_marching; default (:block) → segment_response
+        # BC-III: :marching is the default solver; :block routes to segment_response
         @test isapprox(ground_response(t, rb, xy22, m6; bc=:III, solver=:marching),
                        segment_response_marching(t, rb, xy22, m6), rtol=1e-12)
-        @test isapprox(ground_response(t, rb, xy22, m6; interp=false),  # nseg>1 defaults to BC-III
+        @test isapprox(ground_response(t, rb, xy22, m6; interp=false),  # nseg>1 → BC-III + marching
+                       segment_response_marching(t, rb, xy22, m6; interp=false), rtol=1e-12)
+        @test isapprox(ground_response(t, rb, xy22, m6; solver=:block, interp=false),
                        segment_response(t, rb, xy22, m6), rtol=1e-12)
         # invalid selectors throw
         @test_throws ArgumentError ground_response(t, rb, xy22, m; solver=:nope)

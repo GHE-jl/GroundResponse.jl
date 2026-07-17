@@ -12,8 +12,8 @@ borehole wall temperature. The groundwater flow is in the positive x-direction.
 Like the isotropic models (`ils`, `fls`), `mils` dispatches on geometry rather than coordinates:
 the direction-dependent response is a function of the separation `r` and the flow-relative angle
 `θ` only (the point is `x = r·cosθ`, `y = r·sinθ`, and only `x` and `r` enter the model). Pass
-scalars for a single point, or matching `nb×nb` matrices — built with
-[`borefield_geometry`](@ref) — for a borefield.
+scalars for a single point, or matching `nb×nb` matrices, built with [`borefield_geometry`](@ref),
+for a borefield.
 # Arguments
     - `t`: Time value or vector [s]
     - `r`: Separation distance [m]. Scalar, or an `nb×nb` matrix for a borefield.
@@ -21,16 +21,15 @@ scalars for a single point, or matching `nb×nb` matrices — built with
           self entries (diagonal `r = rb`) therefore give the borehole-wall self response.
         - If `r > rb`, uses the directional form ḡ(r) × exp(x·vT/(2α)) / I₀(r·vT/(2α)) (Eq. 1).
     - `θ`: Flow-relative angle in **degrees**, `θ ∈ [0, 180]`. Scalar, or an `nb×nb` matrix
-        matching `r`. Downstream `θ = 0` is warmest, upstream `θ = 180` coolest.
+        matching `r`.
     - `rb`: Borehole radius [m] — identifies inside/outside the borehole.
     - `ks`: Ground thermal conductivity [W/mK]
     - `Cs`: Ground volumetric specific heat [J/m³K]
     - `Cf`: Groundwater volumetric specific heat [J/m³K]
     - `vD`: Darcy velocity (groundwater speed) [m/s]
-        - Must not be zero; set to a low value for impervious ground (1e-12) or use `ils`.
+        - Must not be zero, set to a low value for impervious ground (1e-12).
 # Output
-    - `g`: A g-function corresponding to the borehole wall temperature [°Cm/W]. A borefield input
-        gives an `(nb × nb)` matrix (scalar `t`) or `(nt × nb × nb)` array (vector `t`).
+    - `g`: A g-function corresponding to the borehole wall temperature [°Cm/W]
 # Reference
     - Pasquier, P., & Lamarche, L. (2022). Analytic expressions for the moving infinite line source
         model. Geothermics, 103, 102413. https://doi.org/10.1016/j.geothermics.2022.102413
@@ -45,7 +44,7 @@ function mils(t::AbstractVector{<:Real}, r::Real, θ::Real, rb::Real, ks::Real, 
     T = float(promote_type(eltype(t), typeof(r), typeof(θ), typeof(rb), typeof(ks), typeof(Cs),
         typeof(Cf), typeof(vD)))
     t_T = convert(Vector{T}, t)
-    x   = T(r) * cosd(T(θ))
+    x = T(r) * cosd(T(θ))
     g = similar(t_T)
     @inbounds @simd for i in eachindex(t_T)
         g[i] = _mils(t_T[i], T(ks), T(Cs), T(Cf), T(r), x, T(rb), T(vD))
@@ -62,16 +61,12 @@ function mils(t::AbstractVector{<:Real}, r::AbstractMatrix{<:Real}, θ::Abstract
     T = float(promote_type(eltype(t), eltype(r), eltype(θ), typeof(rb), typeof(ks), typeof(Cs),
         typeof(Cf), typeof(vD)))
     t_T = convert(Vector{T}, t)
-    nt  = length(t_T)
-    nb  = size(r, 1)
-
-    # Collapse to unique (r, θ) pairs — the direction-dependent kernel (a quadrature/series per
-    # evaluation) is run once per distinct geometry and scattered to every pair that shares it.
-    # This mirrors fls's unique-radius collapse (Rose et al. 2026 strategy for the moving models).
+    nt = length(t_T)
+    nb = size(r, 1)
     pairs = collect(zip(vec(r), vec(θ)))
-    uniq  = unique(pairs)
-    ui    = indexin(pairs, uniq)
-    gU    = Matrix{T}(undef, nt, length(uniq))
+    uniq = unique(pairs)
+    ui = indexin(pairs, uniq)
+    gU = Matrix{T}(undef, nt, length(uniq))
     for (u, (rr, tt)) in enumerate(uniq)
         R = T(rr)
         X = R * cosd(T(tt))
@@ -114,8 +109,7 @@ function _mils(t::T, ks::T, Cs::T, Cf::T, r::T, x::T, rb::T, vD::T) where {T<:Ab
                  besseli(zero(T), rs * vT / (T(2) * α))
     end
 
-    # Azimuthal-mean (circumferential-average) response at radius `rs` — Hantush well function
-    # series of Pasquier & Lamarche (2022), Eq. 20 (early time) and Eq. 25 (late time).
+    # Azimuthal-mean (circumferential-average) response at radius `rs`
     ns = 5                              # Number of summands. Below 20 to avoid BigInt issues.
     b  = (rs * vD * Cf / (4 * ks))^2    # b = (Péclet/4)²
     τ  = (4 * ks / Cs) * (t / rs^2)     # τ = 4·Fo, with Fo = αt/rs²
@@ -123,13 +117,6 @@ function _mils(t::T, ks::T, Cs::T, Cf::T, r::T, x::T, rb::T, vD::T) where {T<:Ab
     I0 = besseli(zero(T), xb)
     a0 = I0 / (4 * T(π) * ks)
 
-    # The two power series converge only on parts of the (b, τ) plane — Eq. 20 for τ ≤ 1/b and
-    # Eq. 25 for τ ≥ 1 — and for b > 1 they both lose accuracy with a modest number of summands
-    # (they also leave a gap 1/b < τ < 1 where neither converges). For b ≤ 1 (the common low-flow
-    # case) the series are fast and accurate; for b > 1 (high Péclet, e.g. large inter-borehole
-    # distances under strong advection) we instead evaluate the Hantush well function directly by
-    # quadrature, W(τ, b) = ∫_{1/τ}^∞ ψ⁻¹·exp(−ψ − b/ψ) dψ (Pasquier & Lamarche 2022, Eq. 3), which
-    # is robust for any τ.
     if b > one(T)
         W, _ = quadgk(ψ -> exp(-ψ - b / ψ) / ψ, inv(τ), T(Inf), rtol = T(1e-8))
         mean = a0 * W

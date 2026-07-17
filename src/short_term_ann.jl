@@ -13,22 +13,26 @@ const _ST_NODES = [
 ]
 
 """
-    short_term_response(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf; clamp=true)
+    short_term_response(t, rb, ri, ro, H, D, V̇, ks, Cs, kg, Cg, kp, Cp, Cf; clamp=true)
 
 Short-term transfer function of the borehole-**outlet** fluid temperature (`T_out`, i.e. the
 entering water temperature on the heat-pump source side), constructed with the artificial
 neural network of Pasquier, Zarrella & Labib (2018). The network emulates the 2.5D thermal
 resistance and capacity model and directly yields a dimensionless transfer function for a unit
 temperature step (ΔT = 1 °C) between the borehole inlet and outlet, so it embeds the borehole
-geometry, thermal capacity and vertical fluid advection.
-
-The mean absolute error with respect to the reference model is about 2e-4, with a maximum
-absolute error near 8e-3. The function is only valid over the 7-day short-term horizon and
-within the ANN training ranges (see below); use `outlet_transfer_function` in
-GroundHeatExchanger.jl to join it to a long-term ground model for the full minutes-to-decades
-response.
-
+geometry, thermal capacity and vertical fluid advection. The mean absolute error with respect to
+the reference model is about 2e-4, with a maximum absolute error near 8e-3. The function is only
+valid over the 7-day short-term horizon and within the ANN training ranges (see below); use
+`outlet_transfer_function` in GroundHeatExchanger.jl to join it to a long-term ground model for the
+full minutes-to-decadesresponse.
 # Arguments
+    - `t`: Time value or vector [s] (maximum of 7 days)
+    - `rb`: Borehole radius [m]
+    - `ri`: Inner pipe radius [m]
+    - `ro`: Outer pipe radius [m]
+    - `H`: Borehole length [m]
+    - `D`: Half shank spacing [m]
+    - `V̇`: Fluid flow rate [m³/s]
     - `ks`: Ground thermal conductivity [W/mK]
     - `Cs`: Ground volumetric heat capacity [J/Km³]
     - `kg`: Grout thermal conductivity [W/mK]
@@ -36,47 +40,42 @@ response.
     - `kp`: Pipe thermal conductivity [W/mK]
     - `Cp`: Pipe volumetric heat capacity [J/Km³]
     - `Cf`: Fluid volumetric heat capacity [J/Km³]
-    - `ri`: Inner pipe radius [m]
-    - `ro`: Outer pipe radius [m]
-    - `rb`: Borehole radius [m]
-    - `H`: Borehole length [m]
-    - `V̇`: Fluid flow rate [m³/s]
-    - `D`: Half shank spacing [m]
-    - `dt`: Simulation time step [s]
-    - `tf`: Simulation duration [s] (capped at the 7-day short-term horizon)
-    - `clamp`: out-of-range handling — `true` (default) clamps inputs to the training bounds
+    - `clamp`: out-of-range handling, `true` (default) clamps inputs to the training bounds
         and emits a `@warn`; `false` emits an `@error` and throws an `ArgumentError`.
-
 # Output
-    - `t`: Time vector `dt:dt:tf` [s]
+    - `t`: Evaluation time(s) [s] (the last value clamped to the horizon when `clamp` is `true`)
     - `g`: Dimensionless short-term outlet transfer function at `t` [-]
-
 # Validity ranges (ANN training bounds)
-    ks 0.5–4 W/mK · Cs 1.7–2.6 MJ/m³K · kg 0.5–3 W/mK · Cg 1.7–2.6 MJ/m³K · kp 0.4 W/mK ·
-    Cp 1.9 MJ/m³K · Cf 4.2 MJ/m³K · ri 0.017 m · ro 0.022 m · rb (2ro+2mm)–0.1 m ·
-    H 110–200 m · V̇ 3.33e-4–5.0e-4 m³/s · D 0.02(rb-2ro)+ro – 0.98(rb-2ro)+ro m ·
-    dt 15 s – 24 h · tf 15 s – 7 days
-
+    - t 15 s – 7 days (horizon applied to the last value)
+    - rb (2ro+2mm)–0.1 m
+    - ri 0.017 m
+    - ro 0.022 m
+    - H 110–200 m
+    - D 0.02(rb-2ro)+ro – 0.98(rb-2ro)+ro m
+    - V̇ 3.33e-4–5.0e-4 m³/s
+    - ks 0.5–4 W/mK
+    - Cs 1.7–2.6 MJ/m³K
+    - kg 0.5–3 W/mK
+    - Cg 1.7–2.6 MJ/m³K
+    - kp 0.4 W/mK
+    - Cp 1.9 MJ/m³K
+    - Cf 4.2 MJ/m³K
 # Reference
     - Pasquier, P., Zarrella, A., & Labib, R. (2018). Application of artificial neural networks
         to near-instant construction of short-term g-functions. Applied Thermal Engineering,
         143, 910–921. https://doi.org/10.1016/j.applthermaleng.2018.07.137
 """
-function short_term_response(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf;
+function short_term_response(t, rb, ri, ro, H, D, V̇, ks, Cs, kg, Cg, kp, Cp, Cf;
     clamp::Bool = true)
-
-    # Validate the simulation-time parameters (physical inputs are validated in
-    # `_short_term_nodes`). `tf` is capped at the 7-day horizon, so every query below is an
-    # interpolation of the ANN nodes — never an extrapolation.
-    dt, tf = _validate_time(dt, tf; clamp = clamp)
 
     # Native ANN transfer function on the 85 fixed nodes
     _, g_nodes = _short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D;
         clamp = clamp)
 
-    # Uniform time vector and shape-preserving (PCHIP) interpolation onto it. `t` and `g` share
-    # the same length by construction.
-    t = collect(dt:dt:tf)
+    # Validate the requested time(s); only the horizon (last value) is bounded by the ANN.
+    t = _validate_time(t; clamp = clamp)
+
+    # Shape-preserving (PCHIP) interpolation onto the requested time(s).
     itp = Interpolator(_ST_NODES, g_nodes)
     g = itp.(t)
 
@@ -152,30 +151,32 @@ function _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; cl
 end
 
 """
-    _validate_time(dt, tf; clamp=true)
+    _validate_time(t; clamp=true)
 
-Check the time step `dt` (15 s – 24 h) and duration `tf` (15 s – 7 days) against the ANN
-short-term limits, applying the same `clamp` policy as `_input_validation`. Returns the
-(possibly clamped) `(dt, tf)`.
+Check the requested evaluation time(s) `t` (scalar or vector) against the ANN short-term
+horizon (15 s – 7 days), applying the same `clamp` policy as `_input_validation`. Only the last
+(largest) value is bounded; the returned `t` has that value clamped when `clamp` is `true`
+(a copy is made for vectors so the caller's array is left untouched).
 """
-function _validate_time(dt, tf; clamp::Bool = true)
-    limits = (("dt", dt, 15, 24 * 3600), ("tf", tf, 15, 7 * 24 * 3600))
-    out = Float64[]
-    for (name, val, lo, hi) in limits
-        if val < lo || val > hi
-            bound = val < lo ? lo : hi
-            msg = "Simulation parameter $name = $val s is outside the valid range [$lo, $hi] s"
-            if clamp
-                @warn "$msg — clamped to $bound s"
-                val = bound
-            else
-                @error msg
-                throw(ArgumentError(msg))
-            end
-        end
-        push!(out, val)
+function _validate_time(t; clamp::Bool = true)
+    lo, hi = 15, 7 * 24 * 3600
+    tlast = last(t)
+    (lo <= tlast <= hi) && return t
+
+    bound = tlast < lo ? lo : hi
+    msg = "Final evaluation time t = $tlast s is outside the short-term range [$lo, $hi] s"
+    if !clamp
+        @error msg
+        throw(ArgumentError(msg))
     end
-    return out[1], out[2]
+    @warn "$msg — clamped to $bound s"
+    if t isa AbstractVector
+        t = float.(t)
+        t[end] = bound
+        return t
+    else
+        return bound
+    end
 end
 
 """
@@ -199,8 +200,6 @@ function _ann_forward(x1)
     y1 = _mapminmax_reverse(a3, _output_scaler)
     return y1
 end
-
-# ===== ARTIFICIAL NEURAL NETWORK SCALING =====
 
 """
     _mapminmax_apply(x, scaler)
@@ -227,8 +226,6 @@ function _mapminmax_reverse(y, scaler)
     x .+= scaler.xoffset
     return x
 end
-
-# ===== ARTIFICIAL NEURAL NETWORK CONSTANTS =====
 
 # Min–max scaler holding the offset, gain and target minimum used to normalise the network
 # input and de-normalise its output.

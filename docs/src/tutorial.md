@@ -13,21 +13,21 @@ time, so a **logarithmically spaced** time vector is the natural choice:
 ```julia
 using GroundResponse
 
-ks, Cs = 3.0, 2.0e6          # ground conductivity [W/m·K], heat capacity [J/m³·K]
-rb     = 0.076               # borehole radius [m]
+ks, Cs = 3.0, 2.0e6         # ground conductivity [W/m·K], heat capacity [J/m³·K]
+rb = 0.076                  # borehole radius [m]
+H, D = 15.0, 4.0           # borehole depth [m] and buried depth [m]
 
 t = 3600.0 .* exp10.(range(0, log10(8760 * 25), length = 200))   # 1 h → 25 yr [s]
 ```
 
 ## 2. A single borehole, raw functions
 
-The raw functions evaluate a model directly at a radius. For the finite line source you also supply
-the depth ``H`` and the buried depth ``D``:
+The raw functions evaluate a model directly at a radius.
 
 ```julia
 g_ils = ils(t, rb, ks, Cs)              # infinite line source
 g_ics = ics(t, rb, rb, ks, Cs)          # infinite cylindrical source (rc = rb)
-g_fls = fls(t, rb, 150.0, 4.0, ks, Cs)  # finite line source, H = 150 m, D = 4 m
+g_fls = fls(t, rb, H, D, ks, Cs)        # finite line source
 ```
 
 At short times the ICS sits below the ILS (it accounts for the finite borehole radius); at long
@@ -40,31 +40,29 @@ times the FLS levels off to a steady state while the ILS keeps growing. See
 automatically. For a single borehole pass a `1×2` coordinate matrix:
 
 ```julia
-m = FLSModel(150.0, 4.0, ks, Cs)            # H = 150 m, D = 4 m
-g = ground_response(t, rb, [0.0 0.0], m)    # ≈ fls(t, rb, 150.0, 4.0, ks, Cs)
+xy = [0.0 0.0]
+m = FLSModel(H, D, ks, Cs)              # fls model
+g = ground_response(t, rb, xy, m)       # ≈ fls(t, rb, H, D, ks, Cs)
 ```
 
-By default (`interp = true`) the single-borehole path sub-samples the model and interpolates back,
-so `g` is very close to — but not bit-identical to — a direct `fls` call. Pass `interp = false` for
-the exact evaluation at every `t`.
+By default (`interp = true`) the single-borehole path sub-samples the model and interpolates back, so `g` is very close to (but not bit-identical to) a direct `fls` call. Pass `interp = false` for the exact evaluation at every `t`.
 
-The advantage is that the *same call* works for a field — only the coordinate matrix changes.
+The advantage is that the *same call* works for a field, only the coordinate matrix changes.
 
 ## 4. A borehole field
 
-Generate a layout with [`borefield`](@ref), then call [`ground_response`](@ref): it detects the
-multiple boreholes and applies spatial superposition for you.
+Generate a layout with [`borefield`](@ref), then call [`ground_response`](@ref): it detects the multiple boreholes and applies spatial superposition for you.
 
 ```julia
 xy = borefield(:rectangle, 3, 3, 5.0)       # 3×3 grid, 5 m spacing → 9×2 matrix
 gf = ground_response(t, rb, xy, m)          # successive_flux applied internally
 ```
 
-The field response `gf` is larger than the single-borehole `g`: the boreholes warm each other's
-ground. See [Spatial superposition](@ref) and [Borefields](@ref) for the layouts and methods.
+The field response `gf` is smaller than the single-borehole `g`, indicating larger heat transfer capability of the borefield compared to a single borehole. See [Spatial superposition](@ref) and [Borefields](@ref) for the layouts and methods.
 
 ## 5. Choosing the superposition method
 
+\TODO update this section considering the newly developped spatial superposition options.
 `ground_response` uses [`successive_flux`](@ref) (fast, iterative). For a reference solution, or to
 validate it, call [`bloc_matrix`](@ref) (a direct linear solve). Both accept either a model or a
 precomputed g-array:
@@ -88,13 +86,14 @@ g_bloc = bloc_matrix(t, rb, xy, m)
 
 Switch to a moving model to include advection. The moving models take a Darcy velocity ``v_D`` and
 the groundwater heat capacity ``C_f``. Because flow (along ``+x``) breaks radial symmetry, their
-response depends on both the separation and the flow-relative angle — but through
+response depends on both the separation and the flow-relative angle, but through
 [`ground_response`](@ref) you still just pass the coordinate array `xy`:
 
+\TODO check if this is the right call for the MILS and MFLS model (including the theta)
 ```julia
 Cf, vD = 4.2e6, 1e-6
 m_mils = MILSModel(rb, ks, Cs, Cf, vD)
-m_mfls = MFLSModel(150.0, rb, 4.0, ks, Cs, Cf, vD)
+m_mfls = MFLSModel(H, rb, D, ks, Cs, Cf, vD)
 
 g_mils = ground_response(t, rb, xy, m_mils)
 g_mfls = ground_response(t, rb, xy, m_mfls)
@@ -103,25 +102,27 @@ g_mfls = ground_response(t, rb, xy, m_mfls)
 Unlike the conductive models, the moving g-functions reach a **steady state** at long times because
 groundwater carries the injected heat away. See [Moving-source models](@ref).
 
-!!! warning "Moving models need a positive velocity"
+!!! note  "Moving models need a positive velocity"
     [`mils`](@ref) and [`mfls`](@ref) divide by a Bessel function of ``v_D`` and require
     ``v_D > 0``. For near-impervious ground use a small value (e.g. `1e-12`) or use the
     corresponding non-moving model.
 
 ## 7. Working with low-level g-arrays
 
-To build a field response from a precomputed array — for example, to reuse it across superposition
-methods — evaluate a model on the geometry matrices from [`borefield_geometry`](@ref):
+To build a field response from a precomputed array, for example, to reuse it across superposition
+methods, evaluate a model on the geometry matrices from [`borefield_geometry`](@ref):
 
 ```julia
-r3D = borefield_geometry(xy, rb)[1]         # nb×nb distance matrix
-g3D = fls(t, r3D, 150.0, 4.0, ks, Cs)       # nt × nb × nb g-array
-g   = successive_flux(g3D)                  # field g-function
+r = borefield_geometry(xy, rb)[1]         # nb×nb distance matrix
+g3D = fls(t, r, H, D, ks, Cs)       # nt × nb × nb g-array
+g1 = successive_flux(g3D)                 # field g-function
+g2 = bloc_matrix(g3D)
 
 # For a moving model, also pass the angle matrix:
 r, θ = borefield_geometry(xy, rb)
-g3D  = mfls(t, r, θ, 150.0, rb, 4.0, ks, Cs, Cf, vD)
-g    = successive_flux(g3D)
+g3D = mfls(t, r, θ, H, rb, D, ks, Cs, Cf, vD)
+g1 = successive_flux(g3D)
+g2 = bloc_matrix(g3D)
 ```
 
 ## Validation scripts
@@ -141,4 +142,4 @@ julia --project=script/ script/script_ground_models.jl
 | `script_borefield_layouts.jl` | A subplot figure of all six layout configurations. |
 | `script_ground_response.jl` | `ground_response` dispatch across all models, with `@btime` benchmarks. |
 | `script_groundwater_advection.jl` | 2-D heatmaps of FLS, MILS, MFLS at 10 yr — the asymmetric plume. |
-| `script_short_term.jl` | Short-term ANN model (⚠️ not yet fully integrated). |
+| `script_short_term.jl` | Short-term ANN model (`short_term_response`), validated against the MATLAB reference. |

@@ -8,8 +8,8 @@ using CairoMakie
 using GroundResponse
 
 # Parameters
-H = 150.0   # Borehole depth [m]
-D = 4.0     # Buried depth [m]
+H = 150   # Borehole depth [m]
+D = 4     # Buried depth [m]
 rb = 0.076   # Borehole radius [m]
 ks = 3.0     # Ground thermal conductivity [W/mK]
 Cs = 2.0e6   # Ground volumetric heat capacity [J/m³K]
@@ -58,6 +58,7 @@ ax = Axis(f[1, 1],
     xscale = log10)
 
 all_labels = ["1x1 = 1", "2×2 = 4", "3×3 = 9", "4×4 = 16", "5×5 = 25"]
+colors = Makie.wong_colors()
 g = zeros(length(t), length(all_labels))
 
 for (k, ((nx, ny), lbl)) in enumerate(zip(bfield_sizes, all_labels))

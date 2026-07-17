@@ -2,7 +2,7 @@
 
 This page describes the role of a ground thermal response function, the conventions every model in
 the package shares, and the high-level [`ground_response`](@ref) interface that dispatches over
-model type and field size. The subsequent theory pages derive each model in turn.
+model type and field size.
 
 ## The ground response function
 
@@ -12,21 +12,13 @@ transient: for a constant heat extraction/injection rate ``q`` [W/m] applied fro
 temperature rise at a radius ``r`` from the source is
 
 ```math
-\Delta T(r, t) = q\, g(r, t).
+\Delta T(r, t) = q \cdot g(r, t).
 ```
 
 The single-borehole model functions return ``g`` in units of **°C·m/W**, with the
 ground-conductivity normalisation (the ``1/(4\pi k_s)`` exponential-integral prefactor and its
 analogues) already folded into the returned value — so no extra scaling is needed to obtain a
 temperature from a load. A constant unit impulse of 1 W/m therefore yields ``\Delta T = g``.
-
-Each model is the solution of the transient heat-conduction equation for a particular idealisation
-of the heat source:
-
-- a **line** of infinite length (ILS),
-- a hollow **cylinder** of finite radius (ICS),
-- a **line of finite length** that accounts for the ground surface and the borehole bottom (FLS),
-- and the two **moving** variants (MILS, MFLS) that add groundwater advection.
 
 ## What each model adds
 
@@ -88,21 +80,22 @@ the number of boreholes:
 
 - **Single borehole** (`size(xy, 1) == 1`): evaluates the model kernel at the borehole wall radius
   `rb`.
-- **Multiple boreholes**: applies spatial superposition via [`successive_flux`](@ref) (BC-II).
-- **`FLSModel` with `nseg > 1`**: applies the BC-III segment superposition via
-  [`segment_response`](@ref) instead, for both a single borehole and a field. See
-  [Spatial superposition](@ref) for the boundary-condition hierarchy (BC-I → BC-II → BC-III).
+- **Multiple boreholes**: applies spatial superposition via [`successive_flux`](@ref) (BC-II). \TODO or any other spatial superposition. Modify this to include the variety of methods. In fact, this section is unclear. The `bc` are defined after. Reorganize this so that it is more linear.
+- **`FLSModel` with `nseg > 1`** (a field): applies the BC-III segment superposition, defaulting to
+  the time-marching solver [`segment_response_marching`](@ref) (the block [`segment_response`](@ref)
+  is reachable with `solver = :block`). A single borehole always evaluates the whole-borehole FLS
+  kernel directly, regardless of `nseg`. See [Spatial superposition](@ref) for the boundary-condition
+  hierarchy (BC-I → BC-II → BC-III).
 
 The `bc` and `solver` keywords override these defaults (`bc = :I | :II | :III`, `solver` picking the
-backend), and `interp` (default `true`) controls the internal constant-step sub-sampling — a
-correctness requirement for the temporal solvers on non-uniform `t`, a performance option elsewhere.
+backend), and `interp` (default `true`) controls the internal constant-step sub-sampling, a correctness requirement for the temporal solvers on non-uniform `t`, a performance option elsewhere.
 See [Spatial superposition](@ref).
 
 ```julia
 m = FLSModel(150.0, 4.0, 3.0, 2.0e6)
 g_single = ground_response(t, rb, [0.0 0.0], m)        # single borehole
-g_field  = ground_response(t, rb, borefield(:rectangle, 3, 3, 5.0), m)  # borefield (BC-II)
-g_bc3    = ground_response(t, rb, borefield(:rectangle, 3, 3, 5.0), FLSModel(150.0, 4.0, 3.0, 2.0e6, 8))  # BC-III
+g_field = ground_response(t, rb, borefield(:rectangle, 3, 3, 5.0), m)  # borefield (BC-II)
+g_bc3 = ground_response(t, rb, borefield(:rectangle, 3, 3, 5.0), FLSModel(150.0, 4.0, 3.0, 2.0e6, 8))  # BC-III
 ```
 
 This keeps user code independent of which model is used: swapping `FLSModel` for `MFLSModel`
@@ -110,10 +103,10 @@ changes only the model object, not the call.
 
 ## Extending with custom models
 
-`AbstractGroundModel` is the extension point. Subtype it and add a single `_response_array` method
-returning the pairwise `nt × nb × nb` response array; every backend (`uniform_flux`,
-`successive_flux`, `bloc_matrix`, `segment_response`) and the `ground_response` interface — including
-`interp` sub-sampling — then work with no further overloads:
+`AbstractGroundModel` is the extension point (in model.response.jl \TODO add the link). Subtype it and add a single `_borehole_response` method
+returning the pairwise `nt × nb × nb` response array, every backend (`uniform_flux`,
+`successive_flux`, `bloc_matrix`, `segment_response`) and the `ground_response` interface (including
+`interp` sub-sampling) then work with no further overloads:
 
 ```julia
 struct MyModel <: AbstractGroundModel
@@ -121,7 +114,7 @@ struct MyModel <: AbstractGroundModel
     Cs::Float64
 end
 
-function GroundResponse._response_array(t, rb, xy, m::MyModel)
+function GroundResponse._borehole_response(t, rb, xy, m::MyModel)
     r = borefield_geometry(xy, rb)[1]          # nb×nb distance matrix
     return my_gfunc(t, r, m.ks, m.Cs)          # nt × nb × nb
 end

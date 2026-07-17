@@ -75,7 +75,6 @@ function ics(t::Real, r::AbstractArray{<:Real}, rc::Real, ks::Real, Cs::Real)
 end
 function ics(t::AbstractVector{<:Real}, r::AbstractArray{<:Real}, rc::Real, ks::Real, Cs::Real)
     # Method for multiple time steps and multiple radius in a 3D array.
-    # The dimensions of the 3D array are (`t`, `x`, `y`).
     # Check type
     T = float(promote_type(eltype(t), eltype(r), typeof(rc), typeof(ks), typeof(Cs)))
     t_T  = convert(Vector{T}, t)
@@ -121,7 +120,7 @@ function _ics(t::T, r::T, rc::T, ks::T, Cs::T) where {T<:AbstractFloat}
     t̃ = (t * ks) / (Cs * rc^2)
 
     # For r >> rc the cylinder is indistinguishable from a line source: ICS → ILS
-    r̃ > 50 && return _ils(t, r, ks, Cs)
+    r̃ > 20 && return _ils(t, r, ks, Cs)
 
     # Upper integration limit
     # s_upper = sqrt(T(50) / t̃)

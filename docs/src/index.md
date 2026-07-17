@@ -5,8 +5,7 @@
 `GroundResponse.jl` evaluates the **ground thermal response**, or *g*-function, that links a heat
 load injected into the ground to the resulting temperature rise at the borehole wall. It is the
 **transient-ground layer** of a geothermal simulation stack: it provides the response of the soil
-*outside* the borehole, where [`BoreholeResistance.jl`](https://github.com/GeothermalJL/BoreholeResistance.jl)
-stops.
+*outside* the borehole, where [`BoreholeResistance.jl`](https://github.com/GHE-jl/BoreholeResistance.jl) stops.
 
 The package implements five analytical models, each available both as a **raw function** and as an
 `AbstractGroundModel` **type** for the high-level interface:
@@ -19,6 +18,7 @@ The package implements five analytical models, each available both as a **raw fu
 | Moving infinite line source | [`mils`](@ref) | [`MILSModel`](@ref) | groundwater advection |
 | Moving finite line source | [`mfls`](@ref) | [`MFLSModel`](@ref) | groundwater advection + finite depth |
 
+\TODO Update this to include all the spatial superposition.
 On top of the single-borehole models, two **spatial-superposition** methods —
 [`successive_flux`](@ref) and [`bloc_matrix`](@ref) — assemble the response of an arbitrary
 **borehole field**, and a family of [`borefield`](@ref) helpers generate common field layouts.
@@ -36,11 +36,11 @@ already folded in, so that for a constant load ``q`` [W/m] applied since ``t = 0
 rise at the borehole wall is simply
 
 ```math
-\Delta T_b(t) = q\, g(t).
+\Delta T_b(t) = q g(t).
 ```
 
 Downstream packages convolve this response with a time-varying load to obtain the full
-borehole-wall temperature history — see [Ecosystem](@ref).
+borehole-wall temperature history, see [Ecosystem](@ref).
 
 ## Installation
 
@@ -48,13 +48,13 @@ The package is not yet registered. Install it directly from the repository:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/GeothermalJL/GroundResponse.jl")
+Pkg.add(url = "https://github.com/GHE-jl/GroundResponse.jl")
 ```
 
 or, in the Pkg REPL mode (press `]`):
 
 ```
-pkg> add https://github.com/GeothermalJL/GroundResponse.jl
+pkg> add https://github.com/GHE-jl/GroundResponse.jl
 ```
 
 ## Quick start

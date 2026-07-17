@@ -11,7 +11,7 @@ groundwater flow is considered to be on the positive x-axis.
 
 Like the isotropic models (`ils`, `fls`), `mfls` dispatches on geometry rather than coordinates:
 the response is a function of the separation `r` and the flow-relative angle `θ` only. Pass scalars
-for a single point, or matching `nb×nb` matrices — built with [`borefield_geometry`](@ref) — for a
+for a single point, or matching `nb×nb` matrices, built with [`borefield_geometry`](@ref), for a
 borefield.
 # Arguments
     - `t`: Time value or vector [s]
@@ -20,7 +20,7 @@ borefield.
           self entries (diagonal `r = rb`) therefore give the borehole-wall self response.
         - If `r > rb`, uses the directional form with exp factor (Eq. 10).
     - `θ`: Flow-relative angle in **degrees**, `θ ∈ [0, 180]`. Scalar, or an `nb×nb` matrix
-        matching `r`. Downstream `θ = 0` is warmest, upstream `θ = 180` coolest.
+        matching `r`.
     - `H`: Borehole depth [m]
     - `rb`: Borehole radius [m]
     - `D`: Buried depth [m]
@@ -30,8 +30,7 @@ borefield.
     - `vD`: Uniform Darcy velocity [m/s]
         - Must not be zero, set to low value for impervious (1e-12)
 # Output
-    - `g`: A g-function corresponding to the borehole wall temperature of the borehole [°Cm/W]. A
-        borefield input gives an `(nb × nb)` matrix (scalar `t`) or `(nt × nb × nb)` array (vector `t`).
+    - `g`: A g-function corresponding to the borehole wall temperature of the borehole [°Cm/W]
 # Reference
     - Guo, Y., Hu, X., Banks, J., & Liu, W. V. (2020). Considering buried depth in the moving
         finite line source model for vertical borehole heat exchangers—A new solution. Energy and
@@ -48,7 +47,7 @@ function mfls(t::AbstractVector{<:Real}, r::Real, θ::Real, H::Real, rb::Real,
     T = float(promote_type(eltype(t), typeof(r), typeof(θ), typeof(H), typeof(rb), typeof(D),
         typeof(ks), typeof(Cs), typeof(Cf), typeof(vD)))
     t_T = convert(Vector{T}, t)
-    x   = T(r) * cosd(T(θ))
+    x = T(r) * cosd(T(θ))
     g = similar(t_T)
     @inbounds @simd for i in eachindex(t_T)
         g[i] = _mfls(t_T[i], T(H), T(rb), T(D), T(r), x, T(ks), T(Cs), T(Cf), T(vD))
@@ -65,17 +64,12 @@ function mfls(t::AbstractVector{<:Real}, r::AbstractMatrix{<:Real}, θ::Abstract
     T = float(promote_type(eltype(t), eltype(r), eltype(θ), typeof(H), typeof(rb), typeof(D),
         typeof(ks), typeof(Cs), typeof(Cf), typeof(vD)))
     t_T = convert(Vector{T}, t)
-    nt  = length(t_T)
-    nb  = size(r, 1)
-
-    # Direction-dependent response is asymmetric under advection but shares the same value across
-    # borehole pairs with the same (distance, angle). Evaluate each unique (r, θ) response only
-    # once, then scatter (Rose et al. 2026 strategy). This is a large saving for the MFLS model,
-    # whose kernel performs a quadrature per evaluation. Mirrors fls's unique-radius collapse.
+    nt = length(t_T)
+    nb = size(r, 1)
     pairs = collect(zip(vec(r), vec(θ)))
-    uniq  = unique(pairs)
-    ui    = indexin(pairs, uniq)
-    gU    = Matrix{T}(undef, nt, length(uniq))
+    uniq = unique(pairs)
+    ui = indexin(pairs, uniq)
+    gU = Matrix{T}(undef, nt, length(uniq))
     for (u, (rr, tt)) in enumerate(uniq)
         R = T(rr)
         X = R * cosd(T(tt))

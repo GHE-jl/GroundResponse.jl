@@ -3,47 +3,44 @@ using LinearAlgebra
 """
     borefield_geometry(xy, rb)
 
-Pairwise geometry of a borefield: the distance matrix, the flow-relative angle matrix, and the
-**unique (distance, angle) combinations**. This helper feeds every ground model:
-  - isotropic models (ILS, ICS, FLS) consume only the distance matrix `r`;
-  - moving models (MILS, MFLS) additionally consume the angle matrix `θ`, because under
-    groundwater flow the pairwise response is asymmetric (`g[i,j] ≠ g[j,i]`) and depends on both
-    the separation `rᵢⱼ` and the angle `θᵢⱼ` of the source→receiver direction relative to the
-    flow (+x).
+Pairwise geometry of a borefield: the **distance matrix** and the **flow-relative angle matrix**.
+These are the two quantities every ground model consumes:
+    - isotropic models (ILS, ICS, FLS) use only the distance matrix `r`;
+    - moving models (MILS, MFLS) additionally use the angle matrix `θ`, because under groundwater
+        flow the pairwise response is asymmetric (`g[i,j] ≠ g[j,i]`) and depends on both the
+        separation `rᵢⱼ` and the angle `θᵢⱼ` of the source→receiver direction relative to the
+        flow (+x).
 Convention: row `i` is the **receiver** and column `j` the **source**, matching `g[k,i,j]`. The
 angle is measured for the source→receiver vector, so a receiver directly downstream of the source
 has `θ = 0°` (warmest) and one directly upstream has `θ = 180°` (coolest). Angles are returned in
 **degrees**.
 # Arguments
-    - `xy`: Borehole coordinates (nb × 2) [m]. Groundwater flows along is assumed along +x.
+    - `xy`: Borehole coordinates (nb × 2) [m]. Groundwater flow is assumed along +x.
     - `rb`: Borehole radius [m]. Placed on the diagonal of `r`.
 # Outputs
     - `r`: Pairwise distance matrix (nb × nb) [m] (diagonal entries equal `rb`).
     - `θ`: Pairwise angle matrix (nb × nb) [°]; `θ[i,j] = acosd((xᵢ − xⱼ)/r[i,j])` ∈ [0, 180];
         `0` on the diagonal.
-    - `keys`: Unique `(r, θ)` pairs (nu × 2) [m, °], including the diagonal `(rb, 0)`.
-    - `idx`: Index matrix (nb × nb) mapping each `(i,j)` to its row in `keys`. Lets a caller
-        evaluate each unique response once and scatter it.
+# Inspecting the borefield further
+To recover the distinct `(distance, angle)` combinations, an index from each borehole pair to its
+combination, and the multiplicity of each, work directly from `r` and `θ`:
+```julia
+r, θ = borefield_geometry(xy, rb)
+combos = round.(hcat(vec(r), vec(θ)); digits = 10)        # (r, θ) for every (i, j) pair
+keys   = unique(eachrow(combos))                          # distinct (distance, angle) combinations
+idx    = reshape(indexin(eachrow(combos), keys), size(r)) # nb×nb: which combination each pair is
+counts = [count(==(k), eachrow(combos)) for k in keys]    # how many pairs share each (Σ = nb²)
+```
+`keys` is what an optimised solver would evaluate once, `idx` scatters those results back onto the
+`nb×nb` grid, and a large `counts` entry flags a highly symmetric field (many equivalent pairs).
 """
-function borefield_geometry(xy::AbstractArray{<:Real}, rb::Real)
+function borefield_geometry(xy::AbstractMatrix{<:Real}, rb::Real)
     nb = size(xy, 1)
     r  = sqrt.(max.(sum(abs2, xy, dims=2) .+ sum(abs2, xy, dims=2)' .- 2 * (xy * xy'), 0.0))
     dx = xy[:, 1] .- xy[:, 1]'                          # dx[i,j] = xᵢ − xⱼ (receiver − source)
     θ  = [i == j ? 0.0 : acosd(clamp(dx[i, j] / r[i, j], -1.0, 1.0)) for i in 1:nb, j in 1:nb]
     r  = r + Diagonal(fill(float(rb), nb))              # self-distance on the diagonal → rb
-
-    keys   = Tuple{Float64,Float64}[]
-    keymap = Dict{Tuple{Float64,Float64},Int}()
-    idx    = zeros(Int, nb, nb)
-    for j in 1:nb, i in 1:nb
-        key = (round(r[i, j]; digits=10), round(θ[i, j]; digits=10))
-        idx[i, j] = get!(keymap, key) do
-            push!(keys, key)
-            length(keys)
-        end
-    end
-    keymat = isempty(keys) ? zeros(0, 2) : reduce(vcat, ([k[1] k[2]] for k in keys))
-    return r, θ, keymat, idx
+    return r, θ
 end
 
 """
@@ -52,14 +49,14 @@ end
 Unified entry point for generating borehole coordinates. `shape` selects the layout; the remaining
 arguments are forwarded unchanged to the corresponding layout function.
 # Arguments
-| `shape`            | Layout function              | Signature(s)                         |
-|:-------------------|:-----------------------------|:-------------------------------------|
-| `:rectangle`       | `borefield_rectangle`        | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
-| `:line`            | `borefield_line`             | `(n, B)`                             |
-| `:circle`          | `borefield_circle`           | `(nb, R)`                            |
-| `:L`               | `borefield_L`                | `(n1, n2, B)` or `(n1, n2, B1, B2)`  |
-| `:U`               | `borefield_U`                | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
-| `:open_rectangle`  | `borefield_open_rectangle`   | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
+    | `shape`            | Layout function              | Signature(s)                         |
+    |:-------------------|:-----------------------------|:-------------------------------------|
+    | `:rectangle`       | `borefield_rectangle`        | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
+    | `:line`            | `borefield_line`             | `(n, B)`                             |
+    | `:circle`          | `borefield_circle`           | `(nb, R)`                            |
+    | `:L`               | `borefield_L`                | `(n1, n2, B)` or `(n1, n2, B1, B2)`  |
+    | `:U`               | `borefield_U`                | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
+    | `:open_rectangle`  | `borefield_open_rectangle`   | `(nx, ny, B)` or `(nx, ny, Bx, By)`  |
 # Output
     - `xy`: Borehole coordinates (nb × 2) [m]
 """

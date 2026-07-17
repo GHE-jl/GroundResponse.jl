@@ -27,6 +27,11 @@ Modules = [GroundResponse]
 
 - [`ground_response`](@ref) — dispatch over model type and field size
 
+### Short-term ANN model
+
+- [`short_term_response`](@ref) — ANN-based short-term outlet transfer function
+  (Pasquier, Zarrella & Labib, 2018)
+
 ### Spatial superposition methods
 
 Presented in order of increasing boundary-condition detail (BC-I → BC-II → BC-III):
@@ -51,9 +56,11 @@ The boundary condition is selected on [`FLSModel`](@ref) through its optional `n
 !!! tip "Where the docstrings live"
     Full signatures and argument lists are rendered inline on the theory pages:
     [Overview](@ref), [Line-source models](@ref), [Moving-source models](@ref),
-    [Spatial superposition](@ref) and [Borefields](@ref).
+    [Spatial superposition](@ref) and [Borefields](@ref). The short-term ANN model is documented
+    below since it does not yet have a dedicated theory page.
 
-!!! note "Short-term ANN model"
-    The package also contains a short-term g-function based on an artificial neural network
-    (`gST_ANN`, Pasquier et al. 2018). It is not yet fully integrated and is therefore **not
-    exported**; it does not appear in the index above.
+## Short-term ANN model
+
+```@docs
+short_term_response
+```

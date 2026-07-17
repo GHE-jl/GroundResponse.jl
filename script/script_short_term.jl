@@ -569,7 +569,7 @@ all_pass = true
 for (i, (p, ref)) in enumerate(zip(datasets, references))
     # `_short_term_nodes` returns the 85 raw ANN values (before interpolation); it takes only
     # the 13 physical inputs, so drop the dt/tf entries of each dataset tuple.
-    _, g_raw = GroundResponse._short_term_nodes(p[1:13]...)
+    @time _, g_raw = GroundResponse._short_term_nodes(p[1:13]...)
     Δ = abs.(g_raw .- ref)
     pass = isapprox(g_raw, ref)
     global all_pass &= pass
@@ -596,8 +596,9 @@ V̇  = 23.7 / 1000 / 60            # 23.7 L/min -> m^3/s
 D  = 0.029
 dt = 15.0                        # 15 s time step
 tf = 7 * 24 * 3600.0             # 7 days (ANN validity horizon)
+t  = collect(dt:dt:tf)           # uniform time vector
 
-t_EWT, g_EWT = short_term_response(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D, dt, tf)
+t_EWT, g_EWT = short_term_response(t, rb, ri, ro, H, D, V̇, ks, Cs, kg, Cg, kp, Cp, Cf)
 
 ts_char = H^2 / (9 * ks / Cs)    # characteristic time t_s = H^2 / (9 alpha)
 

@@ -7,7 +7,7 @@ turns them into the pairwise distance and angle matrices consumed by [`successiv
 
 ## Coordinate convention
 
-Every layout function returns an ``n_b \times 2`` matrix of ``[x\ \ y]`` coordinates in metres. That
+Every layout function returns an ``n_b \times 2`` matrix of ``[x \ y]`` coordinates in metres. That
 matrix is exactly what [`ground_response`](@ref) and the superposition methods expect:
 
 ```julia
@@ -50,13 +50,13 @@ An unknown shape symbol raises an `ArgumentError` listing the valid options.
 
 [`borefield_geometry`](@ref) computes the geometry that spatial superposition operates on. Given the
 coordinates and the borehole radius it returns the pairwise distance matrix `r` (with the diagonal
-set to `rb`), the flow-relative angle matrix `θ` in degrees (with the diagonal set to `0`), the
-unique `(r, θ)` pairs `keys`, the index map `idx` from each borehole pair to its unique key, and the
-per-key pair `counts`. The isotropic models (ILS, ICS, FLS) use only `r`; the moving models (MILS,
-MFLS) additionally use `θ`, because under groundwater flow the pairwise response is asymmetric and
-depends on both the separation and the angle to the flow. The unique-pair reduction lets the
-(often expensive) kernels evaluate each distinct geometry only once and then scatter the result
-across the full ``n_b \times n_b`` array.
+set to `rb`) and the flow-relative angle matrix `θ` in degrees (with the diagonal set to `0`). The
+isotropic models (ILS, ICS, FLS) use only `r`; the moving models (MILS, MFLS) additionally use `θ`,
+because under groundwater flow the pairwise response is asymmetric and depends on both the separation
+and the angle to the flow. Because any two borehole pairs with the same `(r, θ)` give an identical
+response, the distinct combinations of a layout, and how often each recurs, measure how much work
+a solver can save by evaluating each unique geometry only once; the [`borefield_geometry`](@ref)
+docstring shows how to compute those combinations directly from `r` and `θ`.
 
 ## Functions on this page
 

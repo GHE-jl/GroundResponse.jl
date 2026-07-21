@@ -14,8 +14,8 @@ makedocs(;
     authors = "Gabriel-Dion <dion.gabriel100@gmail.com>",
     sitename = "GroundResponse.jl",
     format = Documenter.HTML(;
-        canonical = "https://GeothermalJL.github.io/GroundResponse.jl",
-        edit_link = "master",
+        canonical = "https://GHE-jl.github.io/GroundResponse.jl",
+        edit_link = "main",
         assets = String[],
         mathengine = Documenter.KaTeX(),
         sidebar_sitename = false,
@@ -38,6 +38,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo = "github.com/GeothermalJL/GroundResponse.jl",
-    devbranch = "master",
+    repo = "github.com/GHE-jl/GroundResponse.jl",
+    devbranch = "main",
 )

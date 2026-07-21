@@ -40,7 +40,7 @@ ro_1=0.022
 rb_1= 2ro_1+2e-3 
 H_1=110
 V̇_1=3.34e-4
-D_1=0.02(rb_1-2ro_1)+ro_1
+s_1=2*(0.02(rb_1-2ro_1)+ro_1)
 dt_1=15 
 tf_1=15
 
@@ -57,7 +57,7 @@ ro_2=0.022
 rb_2= 0.0595
 H_2=132.5
 V̇_2=3.75e-4
-D_2=0.03136
+s_2=0.06272
 dt_2=15
 tf_2=151211.25
 
@@ -74,7 +74,7 @@ ro_3=0.022
 rb_3= 0.073
 H_3=155.0
 V̇_3=4.17e-4
-D_3=0.04
+s_3=0.08
 dt_3=43207.5
 tf_3=302407.5
 
@@ -91,7 +91,7 @@ ro_4=0.022
 rb_4= 0.087
 H_4=177.5
 V̇_4=4.59e-4
-D_4=0.04864
+s_4=0.09728
 dt_4=64803.75
 tf_4=453603.75
 
@@ -108,7 +108,7 @@ ro_5=0.022
 rb_5=0.1
 H_5=200
 V̇_5=5.0e-4
-D_5=0.98(rb_5-2ro_5)+ro_5
+s_5=2*(0.98(rb_5-2ro_5)+ro_5)
 dt_5= 86400
 tf_5= 604800
 # ===========================================================================
@@ -550,16 +550,13 @@ g_raw_5m = [
    1.572839212396244
 ]
 
-# ===========================================================================
 # Section 3 - Validation: recompute with GroundResponse and compare
-# ===========================================================================
-
 datasets = [
-    (ks_1, Cs_1, kg_1, Cg_1, kp_1, Cp_1, Cf_1, ri_1, ro_1, rb_1, H_1, V̇_1, D_1, dt_1, tf_1),
-    (ks_2, Cs_2, kg_2, Cg_2, kp_2, Cp_2, Cf_2, ri_2, ro_2, rb_2, H_2, V̇_2, D_2, dt_2, tf_2),
-    (ks_3, Cs_3, kg_3, Cg_3, kp_3, Cp_3, Cf_3, ri_3, ro_3, rb_3, H_3, V̇_3, D_3, dt_3, tf_3),
-    (ks_4, Cs_4, kg_4, Cg_4, kp_4, Cp_4, Cf_4, ri_4, ro_4, rb_4, H_4, V̇_4, D_4, dt_4, tf_4),
-    (ks_5, Cs_5, kg_5, Cg_5, kp_5, Cp_5, Cf_5, ri_5, ro_5, rb_5, H_5, V̇_5, D_5, dt_5, tf_5),
+    (ks_1, Cs_1, kg_1, Cg_1, kp_1, Cp_1, Cf_1, ri_1, ro_1, rb_1, H_1, V̇_1, s_1, dt_1, tf_1),
+    (ks_2, Cs_2, kg_2, Cg_2, kp_2, Cp_2, Cf_2, ri_2, ro_2, rb_2, H_2, V̇_2, s_2, dt_2, tf_2),
+    (ks_3, Cs_3, kg_3, Cg_3, kp_3, Cp_3, Cf_3, ri_3, ro_3, rb_3, H_3, V̇_3, s_3, dt_3, tf_3),
+    (ks_4, Cs_4, kg_4, Cg_4, kp_4, Cp_4, Cf_4, ri_4, ro_4, rb_4, H_4, V̇_4, s_4, dt_4, tf_4),
+    (ks_5, Cs_5, kg_5, Cg_5, kp_5, Cp_5, Cf_5, ri_5, ro_5, rb_5, H_5, V̇_5, s_5, dt_5, tf_5),
 ]
 references = [g_raw_1m, g_raw_2m, g_raw_3m, g_raw_4m, g_raw_5m]
 
@@ -567,9 +564,9 @@ println("Short-term g-function validation vs. MATLAB ANN_gfunction (Pasquier et 
 println("-"^80)
 all_pass = true
 for (i, (p, ref)) in enumerate(zip(datasets, references))
-    # `_short_term_nodes` returns the 85 raw ANN values (before interpolation); it takes only
+    # `short_term_nodes` returns the 85 raw ANN values (before interpolation); it takes only
     # the 13 physical inputs, so drop the dt/tf entries of each dataset tuple.
-    @time _, g_raw = GroundResponse._short_term_nodes(p[1:13]...)
+    @time _, g_raw = short_term_nodes(p[1:13]...)
     Δ = abs.(g_raw .- ref)
     pass = isapprox(g_raw, ref)
     global all_pass &= pass
@@ -581,9 +578,7 @@ println("-"^80)
 println(all_pass ? "All 5 cases reproduce the MATLAB reference to machine precision." :
                    "At least one case deviates from the reference - investigate.")
 
-# ===========================================================================
 # Section 4 - Usage example and figure (short-term transfer function)
-# ===========================================================================
 
 # Representative single borehole (thermal-response-test case of Table 1)
 ks = 2.13;  Cs = 2.0e6            # ground
@@ -593,12 +588,12 @@ Cf = 4.2e6                       # fluid
 ri = 0.017; ro = 0.022; rb = 0.08
 H  = 150.0
 V̇  = 23.7 / 1000 / 60            # 23.7 L/min -> m^3/s
-D  = 0.029
+s  = 0.058
 dt = 15.0                        # 15 s time step
 tf = 7 * 24 * 3600.0             # 7 days (ANN validity horizon)
 t  = collect(dt:dt:tf)           # uniform time vector
 
-t_EWT, g_EWT = short_term_response(t, rb, ri, ro, H, D, V̇, ks, Cs, kg, Cg, kp, Cp, Cf)
+t_EWT, g_EWT = short_term_response(t, rb, ri, ro, H, s, V̇, ks, Cs, kg, Cg, kp, Cp, Cf)
 
 ts_char = H^2 / (9 * ks / Cs)    # characteristic time t_s = H^2 / (9 alpha)
 

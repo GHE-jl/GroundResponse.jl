@@ -13,7 +13,7 @@ const _ST_NODES = [
 ]
 
 """
-    short_term_response(t, rb, ri, ro, H, D, V̇, ks, Cs, kg, Cg, kp, Cp, Cf; clamp=true)
+    short_term_response(t, rb, ri, ro, H, s, V̇, ks, Cs, kg, Cg, kp, Cp, Cf; clamp=true)
 
 Short-term transfer function of the borehole-**outlet** fluid temperature (`T_out`, i.e. the
 entering water temperature on the heat-pump source side), constructed with the artificial
@@ -31,7 +31,7 @@ full minutes-to-decadesresponse.
     - `ri`: Inner pipe radius [m]
     - `ro`: Outer pipe radius [m]
     - `H`: Borehole length [m]
-    - `D`: Half shank spacing [m]
+    - `s`: Shank spacing (distance between the two legs of the U-tube) [m]
     - `V̇`: Fluid flow rate [m³/s]
     - `ks`: Ground thermal conductivity [W/mK]
     - `Cs`: Ground volumetric heat capacity [J/Km³]
@@ -46,30 +46,30 @@ full minutes-to-decadesresponse.
     - `t`: Evaluation time(s) [s] (the last value clamped to the horizon when `clamp` is `true`)
     - `g`: Dimensionless short-term outlet transfer function at `t` [-]
 # Validity ranges (ANN training bounds)
-    - t 15 s – 7 days (horizon applied to the last value)
-    - rb (2ro+2mm)–0.1 m
-    - ri 0.017 m
-    - ro 0.022 m
-    - H 110–200 m
-    - D 0.02(rb-2ro)+ro – 0.98(rb-2ro)+ro m
-    - V̇ 3.33e-4–5.0e-4 m³/s
-    - ks 0.5–4 W/mK
-    - Cs 1.7–2.6 MJ/m³K
-    - kg 0.5–3 W/mK
-    - Cg 1.7–2.6 MJ/m³K
-    - kp 0.4 W/mK
-    - Cp 1.9 MJ/m³K
-    - Cf 4.2 MJ/m³K
+    - t: 15 s – 7 days (horizon applied to the last value)
+    - rb: (2ro+2mm)–0.1 m
+    - ri: 0.017 m
+    - ro: 0.022 m
+    - H: 110–200 m
+    - s: 2(0.02(rb-2ro)+ro) – 2(0.98(rb-2ro)+ro) m (twice the half-shank spacing)
+    - V̇: 3.33e-4–5.0e-4 m³/s
+    - ks: 0.5–4 W/mK
+    - Cs: 1.7–2.6 MJ/m³K
+    - kg: 0.5–3 W/mK
+    - Cg: 1.7–2.6 MJ/m³K
+    - kp: 0.4 W/mK
+    - Cp: 1.9 MJ/m³K
+    - Cf: 4.2 MJ/m³K
 # Reference
     - Pasquier, P., Zarrella, A., & Labib, R. (2018). Application of artificial neural networks
         to near-instant construction of short-term g-functions. Applied Thermal Engineering,
         143, 910–921. https://doi.org/10.1016/j.applthermaleng.2018.07.137
 """
-function short_term_response(t, rb, ri, ro, H, D, V̇, ks, Cs, kg, Cg, kp, Cp, Cf;
+function short_term_response(t, rb, ri, ro, H, s, V̇, ks, Cs, kg, Cg, kp, Cp, Cf;
     clamp::Bool = true)
 
     # Native ANN transfer function on the 85 fixed nodes
-    _, g_nodes = _short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D;
+    _, g_nodes = short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, s;
         clamp = clamp)
 
     # Validate the requested time(s); only the horizon (last value) is bounded by the ANN.
@@ -83,29 +83,34 @@ function short_term_response(t, rb, ri, ro, H, D, V̇, ks, Cs, kg, Cg, kp, Cp, C
 end
 
 """
-    _short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp=true)
+    short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, s; clamp=true)
 
-Evaluate the ANN on its 85 native time nodes (`_ST_NODES`), returning `(_ST_NODES, g)` where
-`g` is the raw short-term transfer function before interpolation. Building block shared by
-`short_term_response` and by the short-/long-term join `outlet_transfer_function`
-(GroundHeatExchanger.jl). Inverts the training transformation `y = ln(t̃ / (g + 1))`.
+Evaluate the ANN on its 85 fixed native time nodes, returning `(ts, g)` where `ts` are the node
+times [s] (geometric, last node = 604800 s = 7-day horizon) and `g` is the raw short-term
+transfer function on those nodes — no interpolation and no time validation, unlike
+`short_term_response`. This is the low-level building block: `short_term_response` adds PCHIP
+interpolation onto arbitrary `t`, and the short-/long-term join `outlet_transfer_function`
+(GroundHeatExchanger.jl) consumes the raw nodes directly (it splices at `ts[end]` and does its own
+interpolation). Inverts the training transformation `y = ln(t̃ / (g + 1))`. See
+`short_term_response` for the argument list and ANN validity ranges.
 """
-function _short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp::Bool = true)
-    p = _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp = clamp)
+function short_term_nodes(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, s; clamp::Bool = true)
+    p = _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, s; clamp = clamp)
     g = 1 ./ (exp.(_ann_forward(p)) ./ _ST_NODES) .- 1
     g[g.<0] .= 0
     return _ST_NODES, g
 end
 
 """
-    _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp=true)
+    _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, s; clamp=true)
 
 Check the 13 physical inputs against the ANN training ranges. When `clamp` is `true`,
 out-of-range values are `@warn`ed and clamped to the nearest bound; when `false`, an `@error`
 is emitted and an `ArgumentError` is thrown. Returns the 8-element parameter vector
-`[ks, Cs, kg, Cg, rb, H, V̇, D]` consumed by the network.
+`[ks, Cs, kg, Cg, rb, H, V̇, D]` consumed by the network, where the half-shank spacing
+`D = s / 2` is derived from the shank spacing `s`.
 """
-function _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; clamp::Bool = true)
+function _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, s; clamp::Bool = true)
 
     # Lower/upper bound of every physical parameter (see the validity ranges in the docstring
     # of `short_term_response`).
@@ -122,11 +127,11 @@ function _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; cl
         2 * ro + 2e-3       0.1;               # rb
         110                 200;               # H
         3.33e-4             5.0e-4;            # V̇
-        0.02 * (rb - 2 * ro) + ro   0.98 * (rb - 2 * ro) + ro   # D
+        2 * (0.02 * (rb - 2 * ro) + ro)   2 * (0.98 * (rb - 2 * ro) + ro)   # s (= 2·half-shank)
     ]
 
-    params = [ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D]
-    p_names = ["ks", "Cs", "kg", "Cg", "kp", "Cp", "Cf", "ri", "ro", "rb", "H", "V̇", "D"]
+    params = [ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, s]
+    p_names = ["ks", "Cs", "kg", "Cg", "kp", "Cp", "Cf", "ri", "ro", "rb", "H", "V̇", "s"]
     p_units = ["W/mK", "J/Km³", "W/mK", "J/Km³", "W/mK", "J/Km³", "J/Km³", "m", "m", "m", "m",
         "m³/s", "m"]
 
@@ -146,8 +151,10 @@ function _input_validation(ks, Cs, kg, Cg, kp, Cp, Cf, ri, ro, rb, H, V̇, D; cl
         end
     end
 
-    # The 8 parameters fed to the network: ks, Cs, kg, Cg, rb, H, V̇, D
-    return params[[1, 2, 3, 4, 10, 11, 12, 13]]
+    # The 8 parameters fed to the network: ks, Cs, kg, Cg, rb, H, V̇, D. The ANN was trained on
+    # the half-shank spacing D, so the shank spacing s (params[13]) is converted back with D = s/2.
+    return [params[1], params[2], params[3], params[4], params[10], params[11], params[12],
+        params[13] / 2]
 end
 
 """

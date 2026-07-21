@@ -4,7 +4,7 @@ A Julia package providing analytical ground thermal response functions (g-functi
 boreholes and borehole fields. GroundResponse.jl is designed as a computational backbone: the raw
 model kernels (`ils`, `fls`, …) evaluate uninterpolated responses at arbitrary time steps and radii,
 leaving system-level modelling to downstream packages such as
-[GroundHeatExchanger.jl](https://github.com/GeothermalJL/GroundHeatExchanger.jl).
+[GroundHeatExchanger.jl](https://github.com/GHE-jl/GroundHeatExchanger.jl).
 
 Time discretisation *is* handled here, though, because it is intrinsic to the spatial-superposition
 methods: the temporal solvers (`successive_flux`, `segment_response_marching`) reproduce the load
@@ -227,13 +227,13 @@ The package is not yet registered. Install directly from the repository:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/GeothermalJL/GroundResponse.jl")
+Pkg.add(url = "https://github.com/GHE-jl/GroundResponse.jl")
 ```
 
 Or in the Julia REPL package manager (`]`):
 
 ```
-pkg> add https://github.com/GeothermalJL/GroundResponse.jl
+pkg> add https://github.com/GHE-jl/GroundResponse.jl
 ```
 
 ## Dependencies

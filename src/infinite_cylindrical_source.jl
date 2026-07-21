@@ -1,5 +1,4 @@
 using SpecialFunctions: besselj0, besselj1, bessely0, bessely1
-using QuadGK: quadgk
 
 """
     ics(t, r, rc, ks, Cs)
@@ -27,7 +26,8 @@ wall temperature.
 function ics(t::Real, r::Real, rc::Real, ks::Real, Cs::Real)
     # Method for 1 time step and 1 radius
     T = float(promote_type(typeof(t), typeof(r), typeof(rc), typeof(ks), typeof(Cs)))
-    return _ics(T(t), T(r), T(rc), T(ks), T(Cs))
+    grid = _ics_grid(T)
+    return _ics(T(t), T(r), T(rc), T(ks), T(Cs), grid)
 end
 function ics(t::AbstractVector{<:Real}, r::Real, rc::Real, ks::Real, Cs::Real)
     # Method for multiple time steps and 1 radius.
@@ -36,18 +36,20 @@ function ics(t::AbstractVector{<:Real}, r::Real, rc::Real, ks::Real, Cs::Real)
     t_T  = convert(Vector{T}, t)
     
     # Preallocate and ICS
+    grid = _ics_grid(T)
     g = similar(t_T)
-    @inbounds @simd for i in eachindex(t_T)
-        g[i] = _ics(t_T[i], T(r), T(rc), T(ks), T(Cs))
+    @inbounds for i in eachindex(t_T)
+        g[i] = _ics(t_T[i], T(r), T(rc), T(ks), T(Cs), grid)
     end
     return g
 end
 function ics(t::Real, r::AbstractVector{<:Real}, rc::Real, ks::Real, Cs::Real)
     # Method for 1 time step and multiple radius.
     T = float(promote_type(typeof(t), eltype(r), typeof(rc), typeof(ks), typeof(Cs)))
-    g = similar(r)
-    @inbounds @simd for i in eachindex(r)
-        g[i] = _ics(T(t), T(r[i]), T(rc), T(ks), T(Cs))
+    grid = _ics_grid(T)
+    g = similar(r, T)
+    @inbounds for i in eachindex(r)
+        g[i] = _ics(T(t), T(r[i]), T(rc), T(ks), T(Cs), grid)
     end
     return g
 end
@@ -56,10 +58,11 @@ function ics(t::AbstractVector{<:Real}, r::AbstractVector{<:Real}, rc::Real, ks:
     # different radius and rows to different time steps.
     T = float(promote_type(eltype(t), eltype(r), typeof(rc), typeof(ks), typeof(Cs)))
     t_T  = convert(Vector{T}, t)
+    grid = _ics_grid(T)
     g = Matrix{T}(undef, length(t_T), length(r))
-    @inbounds @simd for i in eachindex(r)
+    @inbounds for i in eachindex(r)
         for j in eachindex(t_T)
-            g[j, i] = _ics(t_T[j], T(r[i]), T(rc), T(ks), T(Cs))
+            g[j, i] = _ics(t_T[j], T(r[i]), T(rc), T(ks), T(Cs), grid)
         end
     end
     return g
@@ -91,57 +94,90 @@ function ics(t::AbstractVector{<:Real}, r::AbstractArray{<:Real}, rc::Real, ks::
     return g3D
 end
 
-"""
-    _ics_integrand(s, r̃, t̃)
+# Radius ratio r̃ = r/rc above which the cylinder is indistinguishable from a line source and the
+# ICS integral is replaced by the (closed-form, constant-time) ILS. This both removes the most
+# expensive integrals and matches the physics: ICS → ILS in the far field.
+const _ICS_ILS_RATIO = 20.0
 
-Computes the integrand of the infinite cylindrical source model.
+# Number of nodes in the fixed logarithmic quadrature grid.
+const _ICS_GRID_N = 100_000
+
 """
-function _ics_integrand(s::T, r̃::T, t̃::T) where {T<:AbstractFloat}
-    if s < 1e-12
-        return zero(T)
-    end
-    # Pre-calculate Bessel terms to keep the expression readable
-    j0_rs = besselj0(r̃ * s)
-    y1_s  = bessely1(s)
-    y0_rs = bessely0(r̃ * s)
-    j1_s  = besselj1(s)
-    
-    return ((exp(-s^2 * t̃) - 1) * (j0_rs * y1_s - y0_rs * j1_s)) / (s^2 * (j1_s^2 + y1_s^2))
+    _ICSGrid{T}
+
+Precomputed, source-independent data for the fixed-grid quadrature of the ICS integral. The
+integration nodes `B` and every factor that depends only on `B` (not on the radius, time or
+cylinder radius) are computed once and reused for every `(t, r)` evaluation. This gives the model a
+constant evaluation cost regardless of the radius ratio `r̃ = r/rc`, unlike an adaptive quadrature
+whose cost explodes with the oscillation frequency of the Bessel terms (∝ `r̃`).
+- `B`  : integration nodes (log-spaced from 1e-10 to 5e3).
+- `BJ` : `besselj1.(B)`.
+- `BY` : `bessely1.(B)`.
+- `w`  : trapezoidal weight divided by the `B`-only denominator, i.e.
+         `dB / (B^2 * (BJ^2 + BY^2))`.
+"""
+struct _ICSGrid{T<:AbstractFloat}
+    B::Vector{T}
+    BJ::Vector{T}
+    BY::Vector{T}
+    w::Vector{T}
 end
 
 """
-    _ics(t, r, rc, ks, Cs)
+    _ics_grid(T, n)
+
+Build the fixed logarithmic quadrature grid used by [`_ics`](@ref).
+"""
+function _ics_grid(::Type{T}, n::Int = _ICS_GRID_N) where {T<:AbstractFloat}
+    B = exp10.(range(T(-10), log10(T(5e3)), length = n))
+    BJ = besselj1.(B)
+    BY = bessely1.(B)
+
+    # Trapezoidal weights on the non-uniform mesh (matches SCI.m).
+    w = similar(B)
+    @inbounds begin
+        w[1]   = (B[2] - B[1]) / 2
+        w[end] = (B[end] - B[end-1]) / 2
+        for i in 2:n-1
+            w[i] = (B[i+1] - B[i-1]) / 2
+        end
+        # Fold in the B-only denominator so it is not recomputed per evaluation.
+        for i in 1:n
+            w[i] /= B[i]^2 * (BJ[i]^2 + BY[i]^2)
+        end
+    end
+    return _ICSGrid{T}(B, BJ, BY, w)
+end
+
+"""
+    _ics(t, r, rc, ks, Cs, grid)
 
 Kernel function for the infinite cylindrical source model based on Carslaw and Jaeger (1959). The
-response function is based on an impulse of 1 W/m.
+response function is based on an impulse of 1 W/m. The integral is evaluated on the fixed
+logarithmic `grid` (see [`_ics_grid`](@ref)), giving a constant cost independent of `r/rc`. For
+`r/rc > $(_ICS_ILS_RATIO)` the cylinder is indistinguishable from a line source and the closed-form
+ILS is returned instead.
 """
-function _ics(t::T, r::T, rc::T, ks::T, Cs::T) where {T<:AbstractFloat}
+function _ics(t::T, r::T, rc::T, ks::T, Cs::T, grid::_ICSGrid{T}) where {T<:AbstractFloat}
     r̃ = r / rc
+
+    # For r >> rc the cylinder is indistinguishable from a line source: ICS → ILS.
+    r̃ > T(_ICS_ILS_RATIO) && return _ils(t, r, ks, Cs)
+
     t̃ = (t * ks) / (Cs * rc^2)
 
-    # For r >> rc the cylinder is indistinguishable from a line source: ICS → ILS
-    r̃ > 20 && return _ils(t, r, ks, Cs)
+    B  = grid.B
+    BJ = grid.BJ
+    BY = grid.BY
+    w  = grid.w
 
-    # Upper integration limit
-    # s_upper = sqrt(T(50) / t̃)
+    acc = zero(T)
+    @inbounds @simd for i in eachindex(B)
+        b = B[i]
+        num = (exp(-b^2 * t̃) - 1) * (besselj0(r̃ * b) * BY[i] - bessely0(r̃ * b) * BJ[i])
+        term = num * w[i]
+        acc += ifelse(isfinite(term), term, zero(T))
+    end
 
-    # TODO : check whats going on with this part of the function
-    #=if r̃ > T(1.5)
-        # The integrand oscillates at spatial frequency r̃/π (from besselj0/bessely0 at r̃·s).
-        half_period = T(π) / r̃
-        n_breaks = min(floor(Int, s_upper / half_period), 500)
-        pts = Vector{T}(undef, n_breaks + 2)
-        pts[1] = T(1e-8)
-        for i in 1:n_breaks
-            pts[i + 1] = i * half_period
-        end
-        pts[end] = s_upper
-        integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), pts..., rtol = T(1e-6))
-    else=#
-        # r ≈ rc: integrand is smooth (Wronskian identity makes oscillations cancel exactly
-        # at r̃ = 1). Standard integration with Inf is fast and well-conditioned.
-    integral, _ = quadgk(s -> _ics_integrand(s, r̃, t̃), T(1e-8), T(Inf), rtol = T(1e-6))
-    #end
-
-    return integral / (T(π)^2 * ks)
+    return acc / (T(π)^2 * ks)
 end

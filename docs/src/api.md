@@ -31,6 +31,8 @@ Modules = [GroundResponse]
 
 - [`short_term_response`](@ref) — ANN-based short-term outlet transfer function
   (Pasquier, Zarrella & Labib, 2018)
+- [`short_term_nodes`](@ref) — raw ANN transfer function on its 85 native time nodes (the
+  building block behind `short_term_response` and `outlet_transfer_function`)
 
 ### Spatial superposition methods
 
@@ -63,4 +65,5 @@ The boundary condition is selected on [`FLSModel`](@ref) through its optional `n
 
 ```@docs
 short_term_response
+short_term_nodes
 ```

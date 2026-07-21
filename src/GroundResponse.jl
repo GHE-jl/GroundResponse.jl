@@ -33,7 +33,7 @@ export ILSModel, ICSModel, FLSModel, MILSModel, MFLSModel
 export borehole_response, ground_response
 
 # Backends — available for direct use
-export ils, ics, fls, mils, mfls, short_term_response
+export ils, ics, fls, mils, mfls, short_term_response, short_term_nodes
 
 # Spatial superposition
 export bloc_matrix, successive_flux, uniform_flux, segment_response, segment_response_marching

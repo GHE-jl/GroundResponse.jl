@@ -17,7 +17,6 @@ include("infinite_cylindrical_source.jl")   # ics  — Carslaw & Jaeger (1959)
 include("finite_line_source.jl")            # fls  — Claesson & Javed (2011)
 include("moving_infinite_line_source.jl")   # mils — Pasquier & Lamarche (2022)
 include("moving_finite_line_source.jl")     # mfls — Guo et al. (2020)
-include("short_term_ann.jl")                # short-term ANN — Pasquier et al. (2018)
 
 # Time sub-sampling / interpolation, then the spatial-superposition backends and borefield layouts.
 include("time_sampling.jl")
@@ -33,7 +32,7 @@ export ILSModel, ICSModel, FLSModel, MILSModel, MFLSModel
 export borehole_response, ground_response
 
 # Backends — available for direct use
-export ils, ics, fls, mils, mfls, short_term_response, short_term_nodes
+export ils, ics, fls, mils, mfls
 
 # Spatial superposition
 export bloc_matrix, successive_flux, uniform_flux, segment_response, segment_response_marching

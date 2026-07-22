@@ -27,11 +27,6 @@ The models implemented in this package are drawn from the following sources.
   214, 109859. <https://doi.org/10.1016/j.enbuild.2020.109859>
   The moving finite line source (MFLS) implemented in [`mfls`](@ref).
 
-- **Pasquier, P., Zarrella, A., & Labib, R.** (2018). Application of artificial neural networks to
-  near-instant construction of short-term g-functions. *Applied Thermal Engineering*, 143, 910–921.
-  <https://doi.org/10.1016/j.applthermaleng.2018.04.078>
-  The short-term ANN model (`gST_ANN`), currently not fully integrated.
-
 ## Borefield spatial superposition
 
 \TODO: Update references here.

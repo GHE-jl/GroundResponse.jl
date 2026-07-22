@@ -142,4 +142,3 @@ julia --project=script/ script/script_ground_models.jl
 | `script_borefield_layouts.jl` | A subplot figure of all six layout configurations. |
 | `script_ground_response.jl` | `ground_response` dispatch across all models, with `@btime` benchmarks. |
 | `script_groundwater_advection.jl` | 2-D heatmaps of FLS, MILS, MFLS at 10 yr — the asymmetric plume. |
-| `script_short_term.jl` | Short-term ANN model (`short_term_response`), validated against the MATLAB reference. |

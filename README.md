@@ -16,8 +16,7 @@ keyword below.
 ## Models
 
 Five analytical ground response models are implemented, each as a raw function and as an
-`AbstractGroundModel` subtype for the high-level interface. A short-term ANN model is also
-included but is not yet fully integrated (⚠️ see `gST_ANN`).
+`AbstractGroundModel` subtype for the high-level interface.
 
 | Model | Function | Struct | Parameters |
 |-------|----------|--------|------------|
@@ -219,7 +218,6 @@ julia --project=script/ -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 | `script_borefield_layouts.jl` | Subplot figure of all six layout configurations (~50 boreholes each) |
 | `script_ground_response.jl` | `ground_response` dispatch across all models; `@btime` benchmark for single borehole and borefield sizes |
 | `script_groundwater_advection.jl` | 2D spatial heatmap comparing FLS, MILS, and MFLS at t = 10 yr; asymmetric plume visible for moving models |
-| `script_short_term.jl` | Short-term ANN model (⚠️ not yet fully integrated) |
 
 ## Installation
 
@@ -266,7 +264,6 @@ pkg> add https://github.com/GHE-jl/GroundResponse.jl
 - Guo, Y., Hu, X., Banks, J., & Liu, W. V. (2020). Considering buried depth in the moving finite line source model for vertical borehole heat exchangers — A new solution. *Energy and Buildings*, 214, 109859. https://doi.org/10.1016/j.enbuild.2020.109859
 - Guo, Y., Hu, X., Banks, J., & Liu, W. V. (2021). Considering buried depth for vertical borehole heat exchangers in a borehole field with groundwater flow — An extended solution. Energy and Buildings, 235, 110722. https://doi.org/10.1016/j.enbuild.2021.110722
 - Pasquier, P., & Lamarche, L. (2022). Analytic expressions for the moving infinite line source model. *Geothermics*, 103, 102413. https://doi.org/10.1016/j.geothermics.2022.102413
-- Pasquier, P., Zarrella, A., & Labib, R. (2018). Application of artificial neural networks to near-instant construction of short-term g-functions. *Applied Thermal Engineering*, 143, 910–921. https://doi.org/10.1016/j.applthermaleng.2018.07.137
 
 ### Spatial Superposition
 

@@ -1,6 +1,6 @@
 name = "GroundResponse"
 uuid = "4e068bfd-c84d-4e7d-af33-179ff9550968"
-version = "1.0.0-DEV"
+version = "1.0.0"
 authors = ["Gabriel-Dion <dion.gabriel100@gmail.com>"]
 
 [deps]

@@ -1,5 +1,10 @@
 # GroundResponse.jl
 
+[![CI](https://github.com/GHE-jl/GroundResponse.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/GHE-jl/GroundResponse.jl/actions/workflows/CI.yml)
+[![Docs: dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://GHE-jl.github.io/GroundResponse.jl/dev)
+[![Docs: stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://GHE-jl.github.io/GroundResponse.jl/stable)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 A Julia package providing analytical ground thermal response functions (g-functions) for single
 boreholes and borehole fields. GroundResponse.jl is designed as a computational backbone: the raw
 model kernels (`ils`, `fls`, …) evaluate uninterpolated responses at arbitrary time steps and radii,

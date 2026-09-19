@@ -6,7 +6,7 @@ version: 1.0.0
 date-released: 2026-07-30
 url: "https://github.com/GHE-jl/GroundResponse.jl"
 repository-code: "https://github.com/GHE-jl/GroundResponse.jl"
-license: GPL-3.0
+license: AGPL-3.0
 authors:
   - family-names: "Dion"
     given-names: "Gabriel"

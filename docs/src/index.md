@@ -44,17 +44,17 @@ borehole-wall temperature history, see [Ecosystem](@ref).
 
 ## Installation
 
-The package is not yet registered. Install it directly from the repository:
+The package is registered in the Julia General registry:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/GHE-jl/GroundResponse.jl")
+Pkg.add("GroundResponse")
 ```
 
 or, in the Pkg REPL mode (press `]`):
 
 ```
-pkg> add https://github.com/GHE-jl/GroundResponse.jl
+pkg> add GroundResponse
 ```
 
 ## Quick start

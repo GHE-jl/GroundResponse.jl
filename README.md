@@ -226,17 +226,17 @@ julia --project=script/ -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 
 ## Installation
 
-The package is not yet registered. Install directly from the repository:
+The package is registered in the Julia General registry:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/GHE-jl/GroundResponse.jl")
+Pkg.add("GroundResponse")
 ```
 
 Or in the Julia REPL package manager (`]`):
 
 ```
-pkg> add https://github.com/GHE-jl/GroundResponse.jl
+pkg> add GroundResponse
 ```
 
 ## Dependencies

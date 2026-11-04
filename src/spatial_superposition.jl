@@ -34,13 +34,13 @@ function uniform_flux(g::AbstractMatrix{<:Real})
     nb1, nb2 = size(g)
     @assert nb1 == nb2 "g must be nb × nb"
     @assert all(isfinite, g) "g must contain only finite values"
-    return sum(g) / nb1^2
+    return sum(g) / nb1
 end
 function uniform_flux(g::AbstractArray{<:Real,3})
     nt, nb1, nb2 = size(g)
     @assert nb1 == nb2 "g must be nt × nb × nb"
     @assert all(isfinite, g) "g must contain only finite values"
-    return [sum(@view g[k, :, :]) / nb1^2 for k in 1:nt]
+    return [sum(@view g[k, :, :]) / nb1 for k in 1:nt]
 end
 function uniform_flux(t, rb::Real, xy::AbstractMatrix{<:Real}, m::AbstractGroundModel)
     _check_time(t)
@@ -54,7 +54,7 @@ end
 Iteratively solve spatial superposition for a borefield using the successive flux approach of
 Nguyen and Pasquier (2021) to obtain the g-functions of a borefield. This approach assumes that heat
 flux is uniform along all the borehole, and that the mean temperature is the same for all
-boreholes (BC-II). The g-function generated is for an impulse of 1 W/m.
+boreholes (BC-II). The g-function generated is for an impulse of 1 W/m on every borehole.
 
 This is a **temporal** solver: it reproduces the load history by a spectral convolution, which
 assumes a **constant time step**. The `interp` keyword (default `true`) solves on an internal
@@ -135,7 +135,7 @@ function successive_flux(g::AbstractArray{<:Real,3})
         e2 = e1
         e1 = err
     end
-    return ḡ
+    return nb .* ḡ
 end
 function successive_flux(t, rb, xy::AbstractMatrix{<:Real}, m::AbstractGroundModel;
     interp::Bool = true)
@@ -151,7 +151,7 @@ end
 Function that computes the spatial superposition of a borefield using the bloc matrix approach
 of Dusseault et al. (2018) to obtain g-functions of a borefield. This approach assumes that heat
 flux is uniform along all the borehole, and that the mean temperature is the same for all
-boreholes (BC-II). The g-function generated is for an impulse of 1 W/m.
+boreholes (BC-II). The g-function generated is for an impulse of 1 W/m on every borehole.
 # Arguments
     - `g`: A 3D g-function matrix for all radius of the borefield (nt x nb x nb) [°Cm/W]
         - Each time step (1 x nb x nb) has the borefield response for each radius between boreholes.
@@ -192,7 +192,7 @@ function bloc_matrix(gm::AbstractArray{<:Real})
     # Solve the linear system
     sol = Gₕ \ b
     # Output the transfer function
-    return -sol[nb1*nt+1:end]
+    return -nb1 .* sol[nb1*nt+1:end]
 end
 function bloc_matrix(t, rb, xy::AbstractMatrix{<:Real}, m::AbstractGroundModel)
     _check_time(t)
@@ -248,7 +248,7 @@ function _segment_g(t, rb, xy::AbstractMatrix{<:Real}, m::FLSModel)
         end
     end
 
-    return g3D, fill(Hs, nS), H
+    return g3D, fill(Hs, nS), nb * H
 end
 
 """
@@ -268,8 +268,8 @@ fluxes and the common wall temperature, with an energy-balance row weighted by s
         response over receiving segment `p` to a unit flux on emitting segment `q`. Segments are
         ordered borehole-major (`p = (borehole − 1)·nseg + segment`).
     - `Hseg`: Segment lengths (nS × 1) [m].
-    - `Href`: Reference length used in the energy-balance constraint [m]; use the borehole length
-        `H` so that `nseg = 1` reproduces [`bloc_matrix`](@ref).
+    - `Href`: Reference length used in the energy-balance constraint [m]; use the total borehole
+        length `nb·H` so that `nseg = 1` reproduces [`bloc_matrix`](@ref).
     - `t`: Time vector (nt × 1) [s]
     - `rb`: Borehole radius [m]
     - `xy`: Matrix of borehole coordinates where the line source is at (0,0) (nb x 2) [m]
@@ -337,7 +337,8 @@ limits a few percent apart; refining the time grid does not close the gap.
     - `g`: Segment g-array (nt × nS × nS), `g[k, p, q]` the response over receiving segment `p` to a
         unit flux on emitting segment `q`.
     - `Hseg`: Segment lengths (nS × 1) [m].
-    - `Href`: Reference length in the energy-balance constraint [m] (use the borehole length `H`).
+    - `Href`: Reference length in the energy-balance constraint [m] (use the total borehole length
+        `nb·H`).
     - `t`: Time vector (nt × 1) [s]
     - `rb`: Borehole radius [m]
     - `xy`: Matrix of borehole coordinates where the line source is at (0,0) (nb x 2) [m]

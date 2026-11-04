@@ -5,7 +5,7 @@ interact thermally: each one warms (or cools) the ground around its neighbours, 
 response is larger than that of an isolated borehole. **Spatial superposition** combines the
 single-borehole responses at every pairwise distance into one effective field g-function.
 
-The output is always normalised to a unit total-field impulse and returned in °C·m/W, whatever the
+The output is always normalised to a unit impulse on every borehole and returned in °C·m/W, whatever the
 boundary condition. As with the single-borehole models, the internal space–time solve produces the
 borefield g-function `ḡ(t)` for a unit step in time; **load-side temporal superposition** (the
 convolution of `ḡ` with an actual time-varying load) is applied separately, downstream of this
@@ -81,7 +81,7 @@ methods ([`bloc_matrix`](@ref), [`uniform_flux`](@ref)), where it is purely a pe
 [`bloc_matrix`](@ref) (Dusseault et al., 2018) assembles the full space–time convolution system as a
 single block matrix and solves it with **one direct linear solve**. Each ``(i, j)`` block is the
 Toeplitz convolution operator built from ``g_{ij}``; an extra row/column enforces the equal-mean-
-temperature constraint and a unit total load. The direct solve is more expensive in memory and time
+temperature constraint and a unit load per borehole. The direct solve is more expensive in memory and time
 than the successive-flux iteration, but it is unconditionally stable and serves as the reference
 against which the iterative method is validated.
 

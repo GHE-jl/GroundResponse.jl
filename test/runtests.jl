@@ -414,16 +414,16 @@ end
         @test isapprox(g_sf, g_bm, rtol=1e-2)
     end
 
-    @testset "Borefield g-function smaller than single-borehole response since more efficient" begin
+    @testset "Borefield g-function larger than single-borehole response due to thermal interaction" begin
         g_1   = ils(t, rb, ks, Cs)
         g_4   = successive_flux(t, rb, xy22, ILSModel(ks, Cs))
-        @test all(g_4 .< g_1)
+        @test all(g_4 .>= g_1 .* (1 - 1e-2)) && g_4[end] > g_1[end]   # 1e-2: PCHIP sub-sampling
     end
 
-    @testset "Larger borefield gives smaller g-function" begin
+    @testset "Larger borefield gives larger g-function" begin
         g22 = successive_flux(t, rb, xy22, m_fls)
         g33 = successive_flux(t, rb, xy33, m_fls)
-        @test all(g33 .< g22)
+        @test all(g33 .>= g22 .* (1 - 1e-6)) && g33[end] > g22[end]
     end
 
     @testset "successive_flux output is monotonically increasing" begin
@@ -482,10 +482,10 @@ end
     end
 
     @testset "M1 (uniform_flux) — same normalisation as the Type-II schemes" begin
-        # Unit total-field load, [°C·m/W]: same units as successive_flux / bloc_matrix.
+        # Unit load on every borehole, [°C·m/W]: same units as successive_flux / bloc_matrix.
         g22 = uniform_flux(t, rb, xy22, m_fls)
         g33 = uniform_flux(t, rb, xy33, m_fls)
-        @test all(g33 .< g22)                          # larger field ⇒ smaller g (more efficient)
+        @test all(g33 .>= g22 .* (1 - 1e-6)) && g33[end] > g22[end]  # larger field ⇒ larger g
         # Type-I (M1) ≥ Type-II (bloc_matrix), same order of magnitude
         gbm = bloc_matrix(t, rb, xy33, m_fls)
         @test all(g33 .>= gbm .- 1e-9)
@@ -554,7 +554,7 @@ end
             ib, is = seg[p]; jb, js = seg[q]
             g3D[:, p, q] = fls(t, rmat[ib, jb], Hs, Dseg[js], Hs, Dseg[is], ks, Cs)
         end
-        g_ll = segment_response(g3D, fill(Hs, nS), H)
+        g_ll = segment_response(g3D, fill(Hs, nS), nb * H)
         @test isapprox(g_ll, g_hl, rtol=1e-10)
     end
 
@@ -761,11 +761,11 @@ end
         @test all(diff(g) .> 0)
     end
 
-    @testset "Borefield response smaller than single-borehole response" begin
+    @testset "Borefield response larger than single-borehole response" begin
         m = FLSModel(H, D, ks, Cs)
         g1  = ground_response(t, rb, xy1,  m)
         g22 = ground_response(t, rb, xy22, m)
-        @test all(g22 .< g1)
+        @test all(g22 .>= g1 .* (1 - 1e-6)) && g22[end] > g1[end]
     end
 
     @testset "FLSModel(nseg>1) routes to BC-III (marching by default)" begin

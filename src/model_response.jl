@@ -182,7 +182,7 @@ Compute the g-function for either one borehole or a borefield using the given gr
         Pass `interp = false` to compute directly at the requested `t` (the temporal solvers then
         require a uniformly spaced `t`).
 # Output
-    - `g`: g-function for an impulse of 1 W/m [°Cm/W]
+    - `g`: g-function for an impulse of 1 W/m on every borehole [°Cm/W]
 """
 function ground_response(t, rb::Real, xy::AbstractMatrix{<:Real}, m::AbstractGroundModel;
     bc::Symbol = :II, solver::Symbol = :successive, interp::Bool = true)

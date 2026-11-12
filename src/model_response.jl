@@ -2,7 +2,7 @@
 #   - `AbstractGroundModel`: type and the concrete model structs (their parameters);
 #   - `borehole_response`: the single per-model extension point that turns a model into the
 #       pairwise borehole response array the spatial-superposition backends consume;
-#   - `ground_response`: the high-level dispatcher over boundary conditions and solvers.
+#   - `ground_response`: the high-level dispatcher over the boundary conditions.
 
 """
     AbstractGroundModel
@@ -140,98 +140,59 @@ function _borehole_response(t, rb, xy, m::MFLSModel)
 end
 
 """
-    ground_response(t, rb, xy, m::AbstractGroundModel; bc = :II, solver = :successive,
-        interp = true)
-    ground_response(t, rb, xy, m::FLSModel; bc = m.nseg > 1 ? :III : :II,
-        solver = bc == :III ? :marching : :successive, interp = true)
+    ground_response(t, rb, xy, m::AbstractGroundModel; bc = :II, interp = true)
+    ground_response(t, rb, xy, m::FLSModel; bc = m.nseg > 1 ? :III : :II, interp = true)
 
-Compute the g-function for either one borehole or a borefield using the given ground model.
-- **Single borehole** (`size(xy, 1) == 1`): evaluates the model at the borehole wall radius `rb`
-    (for `bc = :II`; `bc = :I` routes through `uniform_flux`).
-- **Multiple boreholes**: applies spatial superposition selected by `bc` / `solver`.
-    `t` must be a scalar or a vector of time steps.
+Compute the g-function of one borehole or of a borefield with the given ground model.
+- **Single borehole** (`size(xy, 1) == 1`): the model evaluated at the borehole wall radius `rb`.
+- **Multiple boreholes**: spatial superposition under the boundary condition `bc`, by
+    [`bc_I`](@ref), [`bc_II`](@ref) or [`bc_III`](@ref).
 # Arguments
     - `t`: Time value or vector [s]
     - `rb`: Borehole radius [m]
-    - `xy`: Borehole coordinates (nb × 2) [m] — can be built with the `borefield_geometry` function
+    - `xy`: Borehole coordinates (nb × 2) [m], e.g. from [`borefield`](@ref)
     - `m`: Ground model (e.g. `FLSModel(150, 4, 3.0, 2e6)`)
 # Keywords
     - `bc`: Boundary condition of the spatial superposition:
-        - `:I`   — equal, uniform heat flux on every borehole → [`uniform_flux`](@ref);
-        - `:II`  — uniform flux along each borehole, equal mean wall temperature (default);
-        - `:III` — flux varies within each borehole for a uniform wall temperature
-          ([`FLSModel`](@ref) only).
-      For an [`FLSModel`](@ref) with `nseg > 1`, `bc` and `solver` default to `:III` and
-      `:marching` (instead of `:II` and `:successive`) so the segment discretisation is used.
-    - `solver`: backend for the chosen `bc`:
-        - `bc = :II`
-            - `:successive` ([`successive_flux`](@ref), default)
-            - `:block` ([`bloc_matrix`](@ref));
-        - `bc = :III`
-            - `:marching` ([`segment_response_marching`](@ref), default)
-            - `:block` ([`segment_response`](@ref)).
-    - `interp` (default `true`): compute on an internal constant-step sub-sampling grid and
-        PCHIP-interpolate to `t`. Uniform keyword, but its *role* differs by backend:
-        - **temporal solvers** (`:successive`, `:marching`): a **correctness** requirement. Their
-            convolution assumes a constant step, so this is the only way a non-uniform `t` yields a
-            valid result. It also bounds the cost to the ~one hundred sub-sample nodes, independent
-            of `length(t)`.
-        - **instantaneous / direct backends** (`:block`, `bc = :I`, single borehole): a
-            **performance** approximation only. These are exact at any `t`, so `interp` trades a
-            small interpolation error for far fewer evaluations on a large `t`.
-        Pass `interp = false` to compute directly at the requested `t` (the temporal solvers then
-        require a uniformly spaced `t`).
+        - `:I` - equal, uniform heat flux on every borehole ([`bc_I`](@ref));
+        - `:II` - uniform flux along each borehole, equal mean wall temperature ([`bc_II`](@ref),
+            default);
+        - `:III` - flux free to vary between the segments of each borehole, uniform wall
+            temperature ([`bc_III`](@ref), [`FLSModel`](@ref) only). The default for an
+            [`FLSModel`](@ref) with `nseg > 1`.
+    - `interp` (default `true`): compute on the internal sub-sampling grid (uniform blocks from one
+        hour to decades) and PCHIP-interpolate to `t`. Required by BC-II and BC-III for any `t` that
+        is not `Δt, 2Δt, …, nΔt`. For BC-I and a single borehole it is a performance choice only.
+        Pass `interp = false` to compute directly at `t`.
 # Output
-    - `g`: g-function for an impulse of 1 W/m on every borehole [°Cm/W]
+    - `g`: g-function for 1 W/m on every borehole [°C·m/W]
 """
 function ground_response(t, rb::Real, xy::AbstractMatrix{<:Real}, m::AbstractGroundModel;
-    bc::Symbol = :II, solver::Symbol = :successive, interp::Bool = true)
+    bc::Symbol = :II, interp::Bool = true)
     _check_time(t)
 
-    # Single borehole: the borefield response reduces to the borehole self response.
+    # Single borehole: the borefield response reduces to the borehole self response
     size(xy, 1) == 1 && return _apply_interp(t, interp, tt -> _borehole_response(tt, rb, xy, m))
 
-    # BC-I condition
-    bc === :I && return _apply_interp(t, interp, tt -> uniform_flux(tt, rb, xy, m))
+    bc === :I  && return bc_I(t, rb, xy, m; interp)
+    bc === :II && return bc_II(t, rb, xy, m; interp)
 
-    # BC-II condition
-    if bc === :II
-        solver === :block      && return _apply_interp(t, interp, tt -> bloc_matrix(tt, rb, xy, m))
-        solver === :successive && return successive_flux(t, rb, xy, m; interp)
-        throw(ArgumentError("bc = :II solver must be :successive or :block, got :$solver"))
-    end
-
-    # BC-III (segment superposition) is only available for an FLSModel; see the method below.
+    # BC-III (segment superposition) is only available for an FLSModel; see the method below
     throw(ArgumentError("bc = :$bc is not supported for $(nameof(typeof(m))); use :I or :II"))
 end
 function ground_response(t, rb::Real, xy::AbstractMatrix{<:Real}, m::FLSModel;
-    bc::Symbol = m.nseg > 1 ? :III : :II, solver::Symbol = bc === :III ? :marching : :successive,
-    interp::Bool = true)
-    # FLSModel additionally supports BC-III (segment superposition).
+    bc::Symbol = m.nseg > 1 ? :III : :II, interp::Bool = true)
     _check_time(t)
 
     # Single borehole. Under a uniform flux (BC-I/BC-II) the borefield response is just the
-    # borehole self response. Under BC-III the flux varies along the borehole, so we fall through to
-    # the segment solver (which handles nb = 1 by building nseg segments through the FLS).
+    # borehole self response. Under BC-III the flux varies along the borehole, so it goes to the
+    # segment solver.
     size(xy, 1) == 1 && bc !== :III &&
         return _apply_interp(t, interp, tt -> _borehole_response(tt, rb, xy, m))
 
-    # BC-I condition
-    bc === :I && return _apply_interp(t, interp, tt -> uniform_flux(tt, rb, xy, m))
-
-    # BC-II condition
-    if bc === :II
-        solver === :block      && return _apply_interp(t, interp, tt -> bloc_matrix(tt, rb, xy, m))
-        solver === :successive && return successive_flux(t, rb, xy, m; interp)
-        throw(ArgumentError("bc = :II solver must be :successive or :block, got :$solver"))
-    end
-
-    # BC-III condition (segment superposition)
-    if bc === :III
-        solver === :marching && return segment_response_marching(t, rb, xy, m; interp)
-        solver === :block    && return _apply_interp(t, interp, tt -> segment_response(tt, rb, xy, m))
-        throw(ArgumentError("bc = :III solver must be :block or :marching, got :$solver"))
-    end
+    bc === :I   && return bc_I(t, rb, xy, m; interp)
+    bc === :II  && return bc_II(t, rb, xy, m; interp)
+    bc === :III && return bc_III(t, rb, xy, m; interp)
 
     throw(ArgumentError("bc = :$bc is not supported; use :I, :II, or :III"))
 end

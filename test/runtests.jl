@@ -393,56 +393,73 @@ end
     end
 
 end
-
 # Spatial superposition
 @testset "Spatial superposition" begin
 
     m_fls = FLSModel(H, D, ks, Cs)
-    t     = 3600.0 .* exp10.(range(0, log10(8760 * 10), length=20))
+    t     = 3600.0 .* exp10.(range(0, log10(8760 * 10), length=20))   # log-spaced (interp = true)
+    tu    = 2_592_000.0 .* (1:12)                                      # Δt, 2Δt, … (interp = false)
     xy22  = borefield(:rectangle, 2, 2, B)
     xy33  = borefield(:rectangle, 3, 3, B)
+    xy23  = borefield(:rectangle, 2, 3, B)
+    resp(tt, xy, m) = GroundResponse._borehole_response(tt, rb, xy, m)
 
-    @testset "successive_flux and bloc_matrix agree — 2×2 FLS" begin
-        g_sf = successive_flux(t, rb, xy22, m_fls; interp=false)
-        g_bm = bloc_matrix(t, rb, xy22, m_fls)
-        @test isapprox(g_sf, g_bm, rtol=1e-4)
+    # BC-II: one marching solver, checked against the block matrix (same system, solved at once)
+    @testset "bc_II has the block-matrix solution (bloc_matrix_legacy)" begin
+        for (xy, m) in ((xy33, m_fls), (borefield(:L, 4, 3, B), m_fls),
+                        (xy33, MILSModel(rb, ks, Cs, Cf, vD)),
+                        (borefield(:rectangle, 3, 2, B; angle = 30), MFLSModel(H, rb, D, ks, Cs, Cf, vD)))
+            g = resp(tu, xy, m)
+            @test isapprox(bc_II(g), bloc_matrix_legacy(g), rtol=1e-10)
+        end
     end
 
-    @testset "successive_flux and bloc_matrix agree — 3×3 FLS" begin
-        g_sf = successive_flux(t, rb, xy33, m_fls; interp=false)
-        g_bm = bloc_matrix(t, rb, xy33, m_fls)
-        @test isapprox(g_sf, g_bm, rtol=1e-2)
+    @testset "successive_flux_legacy converges to bc_II" begin
+        for xy in (xy22, xy33)
+            g = resp(tu, xy, m_fls)
+            @test isapprox(successive_flux_legacy(g), bc_II(g), rtol=1e-3)
+        end
     end
 
-    @testset "Borefield g-function larger than single-borehole response due to thermal interaction" begin
-        g_1   = ils(t, rb, ks, Cs)
-        g_4   = successive_flux(t, rb, xy22, ILSModel(ks, Cs))
-        @test all(g_4 .>= g_1 .* (1 - 1e-2)) && g_4[end] > g_1[end]   # 1e-2: PCHIP sub-sampling
+    @testset "bc_II on a symmetric field equals bc_I (fluxes stay equal)" begin
+        @test isapprox(bc_II(tu, rb, xy22, m_fls; interp=false),
+                       bc_I(tu, rb, xy22, m_fls; interp=false), rtol=1e-10)
     end
 
-    @testset "Larger borefield gives larger g-function" begin
-        g22 = successive_flux(t, rb, xy22, m_fls)
-        g33 = successive_flux(t, rb, xy33, m_fls)
-        @test all(g33 .>= g22 .* (1 - 1e-6)) && g33[end] > g22[end]
+    @testset "Low-level arrays match the high-level methods" begin
+        @test isapprox(bc_I(resp(t, xy22, m_fls)), bc_I(t, rb, xy22, m_fls; interp=false), rtol=1e-12)
+        @test isapprox(bc_II(resp(tu, xy22, m_fls)), bc_II(tu, rb, xy22, m_fls; interp=false),
+                       rtol=1e-12)
+        m6 = FLSModel(H, D, ks, Cs, 6)
+        @test isapprox(bc_III(GroundResponse._segment_g(tu, rb, xy22, m6)...),
+                       bc_III(tu, rb, xy22, m6; interp=false), rtol=1e-12)
     end
 
-    @testset "successive_flux output is monotonically increasing" begin
-        g = successive_flux(t, rb, xy22, m_fls)
-        @test all(diff(g) .> 0)
+    @testset "Onset of the self response (t < 1 h): no interaction, uniform flux" begin
+        # The marching recursion is unstable there; the sources do not interact yet
+        tb = collect(range(120.0, 3600.0; length = 30))
+        g = resp(tb, borefield(:rectangle, 5, 5, 6.0), m_fls)
+        @test isapprox(bc_II(g), bloc_matrix_legacy(g), rtol=1e-8)
+        @test isapprox(bc_II(g), bc_I(g), rtol=1e-12)
+        # g-functions requested from 36 s stay finite, positive and monotonic
+        te = 3600.0 .* exp10.(range(-2, log10(8760 * 25), length = 100))
+        for m in (m_fls, MFLSModel(H, rb, D, ks, Cs, Cf, vD), FLSModel(H, D, ks, Cs, 8))
+            ge = ground_response(te, rb, xy33, m)
+            # (the moving model reaches a steady state: quadrature noise ~1e-8 on its plateau)
+            @test all(isfinite, ge) && all(ge .> 0) && all(diff(ge) .>= -1e-6 * maximum(ge))
+        end
     end
 
-    @testset "Low-level 3D array overload matches high-level — successive_flux" begin
-        r, = borefield_geometry(xy22, rb)
-        g3D  = fls(t, r, H, D, ks, Cs)
-        g_ll = successive_flux(g3D)
-        g_hl = successive_flux(t, rb, xy22, m_fls; interp=false)
-        @test isapprox(g_ll, g_hl, rtol=1e-10)
+    @testset "interp = false requires t = Δt, 2Δt, …" begin
+        @test_throws ArgumentError bc_II(t, rb, xy22, m_fls; interp=false)
+        @test_throws ArgumentError bc_III(t, rb, xy22, FLSModel(H, D, ks, Cs, 2); interp=false)
+        @test_throws ArgumentError bc_II(tu .+ 60.0, rb, xy22, m_fls; interp=false)
     end
 
-    @testset "successive_flux sub-sampling ≈ direct constant-step solve" begin
-        # The default (interp=true) path re-grids onto the internal constant-step blocks and
-        # interpolates back. On a log-spaced request it must track the direct solve on a dense
-        # UNIFORM grid (the temporally-correct reference) to within the sub-sampling tolerance.
+    @testset "Sub-sampling (interp = true) ≈ direct solve on a dense uniform grid" begin
+        # The default path solves on the internal uniform blocks and interpolates back. On a
+        # log-spaced request it must track the direct solve on an hourly grid to within the
+        # sub-sampling tolerance.
         function _li(x, y, xq)
             i = searchsortedlast(x, xq)
             i < 1 && return y[1]; i >= length(x) && return y[end]
@@ -450,54 +467,38 @@ end
         end
         tl     = 3600.0 .* exp10.(range(0, log10(8760), length = 15))    # 1 h … 1 yr, log-spaced
         tref   = collect(3600.0:3600.0:3600.0*8760)                      # hourly → resolves early time
-        gref   = successive_flux(tref, rb, xy22, m_fls; interp = false)
-        gsub   = successive_flux(tl, rb, xy22, m_fls)                     # interp = true
+        gref   = bc_II(tref, rb, xy22, m_fls; interp = false)
+        gsub   = bc_II(tl, rb, xy22, m_fls)                               # interp = true
         gref_at = [_li(tref, gref, q) for q in tl]
         @test isapprox(gsub, gref_at, rtol = 2e-2)
         @test all(diff(gsub) .> 0)                                       # stays monotonic
     end
 
-    @testset "Low-level 3D array overload matches high-level — bloc_matrix" begin
-        r, = borefield_geometry(xy22, rb)
-        g3D  = fls(t, r, H, D, ks, Cs)
-        g_ll = bloc_matrix(g3D)
-        g_hl = bloc_matrix(t, rb, xy22, m_fls)
-        @test isapprox(g_ll, g_hl, rtol=1e-10)
+    @testset "Borefield g-function larger than single-borehole response due to thermal interaction" begin
+        g_1 = ils(t, rb, ks, Cs)
+        g_4 = bc_II(t, rb, xy22, ILSModel(ks, Cs))
+        @test all(g_4 .>= g_1 .* (1 - 1e-2)) && g_4[end] > g_1[end]   # 1e-2: PCHIP sub-sampling
     end
 
-    @testset "successive_flux works with MILSModel" begin
-        m_mils = MILSModel(rb, ks, Cs, Cf, vD)
-        g = successive_flux(t, rb, xy22, m_mils)
-        @test length(g) == length(t)
-        @test all(isfinite, g)
-        @test all(g .> 0)
+    @testset "Larger borefield gives larger g-function, monotonic in time" begin
+        g22 = bc_II(t, rb, xy22, m_fls)
+        g33 = bc_II(t, rb, xy33, m_fls)
+        @test all(g33 .>= g22 .* (1 - 1e-6)) && g33[end] > g22[end]
+        @test all(diff(g22) .> 0) && all(diff(g33) .> 0)
     end
 
-    @testset "M1 (uniform_flux) — isotropic model, low-level matches high-level" begin
-        r, = borefield_geometry(xy22, rb)
-        g_ll = uniform_flux(fls(t, r, H, D, ks, Cs))
-        g_hl = uniform_flux(t, rb, xy22, m_fls)
-        @test isapprox(g_ll, g_hl, rtol=1e-10)
-        @test all(diff(g_hl) .> 0)
+    @testset "BC-I ≥ BC-II, same normalisation" begin
+        g1 = bc_I(t, rb, xy33, m_fls)
+        g2 = bc_II(t, rb, xy33, m_fls)
+        @test all(diff(g1) .> 0)
+        @test all(g1 .>= g2 .* (1 - 1e-6))
+        @test isapprox(g1, g2, rtol=0.05)
     end
 
-    @testset "M1 (uniform_flux) — same normalisation as the Type-II schemes" begin
-        # Unit load on every borehole, [°C·m/W]: same units as successive_flux / bloc_matrix.
-        g22 = uniform_flux(t, rb, xy22, m_fls)
-        g33 = uniform_flux(t, rb, xy33, m_fls)
-        @test all(g33 .>= g22 .* (1 - 1e-6)) && g33[end] > g22[end]  # larger field ⇒ larger g
-        # Type-I (M1) ≥ Type-II (bloc_matrix), same order of magnitude
-        gbm = bloc_matrix(t, rb, xy33, m_fls)
-        @test all(g33 .>= gbm .- 1e-9)
-        @test isapprox(g33, gbm, rtol=0.05)
-        # 2×2 is symmetric ⇒ BC-I and BC-II coincide exactly
-        @test isapprox(uniform_flux(t, rb, xy22, m_fls), bloc_matrix(t, rb, xy22, m_fls), rtol=1e-6)
-    end
-
-    @testset "M1 / M2 stable for MILS & MFLS on a 3×3 field (advection)" begin
+    @testset "BC-I and BC-II stable for MILS & MFLS on a 3×3 field (advection)" begin
         for m in (MILSModel(rb, ks, Cs, Cf, vD), MFLSModel(H, rb, D, ks, Cs, Cf, vD))
-            g1 = uniform_flux(t, rb, xy33, m)
-            g2 = bloc_matrix(t, rb, xy33, m)
+            g1 = bc_I(t, rb, xy33, m)
+            g2 = bc_II(t, rb, xy33, m)
             @test all(isfinite, g1) && all(g1 .> 0) && all(diff(g1) .>= -1e-12)
             @test all(isfinite, g2) && all(g2 .> 0)
         end
@@ -514,85 +515,64 @@ end
     end
 
     # BC-III — segment (uniform borehole-wall temperature) spatial superposition
-    @testset "BC-III (segment_response) reduces to bloc_matrix at nseg = 1" begin
-        g_bm = bloc_matrix(t, rb, xy33, m_fls)
-        g_s1 = segment_response(t, rb, xy33, FLSModel(H, D, ks, Cs, 1))
-        @test isapprox(g_s1, g_bm, rtol=1e-6)
+    @testset "bc_III has the solution of both legacy BC-III solvers, nseg = 1…12" begin
+        for ns in 1:12
+            a = GroundResponse._segment_g(tu, rb, xy23, FLSModel(H, D, ks, Cs, ns))
+            g = bc_III(a...)
+            @test isapprox(g, segment_response_marching_legacy(a...), rtol=1e-10)
+            @test isapprox(g, segment_response_legacy(a...), rtol=1e-10)
+        end
+    end
+
+    @testset "bc_III with nseg = 1 is bc_II" begin
+        @test isapprox(bc_III(tu, rb, xy33, FLSModel(H, D, ks, Cs, 1); interp=false),
+                       bc_II(tu, rb, xy33, m_fls; interp=false), rtol=1e-10)
     end
 
     @testset "BC-III is positive, monotonic, and does not exceed BC-II" begin
-        g_bm = bloc_matrix(t, rb, xy33, m_fls)
-        g_b3 = segment_response(t, rb, xy33, FLSModel(H, D, ks, Cs, 6))
-        @test all(isfinite, g_b3) && all(g_b3 .> 0)
-        @test all(diff(g_b3) .> 0)
-        @test all(g_b3 .<= g_bm .* (1 + 1e-6) .+ 1e-9)     # BC-III ≤ BC-II
+        g2 = bc_II(t, rb, xy33, m_fls)
+        g3 = bc_III(t, rb, xy33, FLSModel(H, D, ks, Cs, 6))
+        @test all(isfinite, g3) && all(g3 .> 0)
+        @test all(diff(g3) .> 0)
+        @test all(g3 .<= g2 .* (1 + 1e-6) .+ 1e-9)
     end
 
     @testset "BC-III converges (non-increasing) with more segments" begin
-        gA = segment_response(t, rb, xy33, FLSModel(H, D, ks, Cs, 2))
-        gB = segment_response(t, rb, xy33, FLSModel(H, D, ks, Cs, 8))
+        gA = bc_III(t, rb, xy33, FLSModel(H, D, ks, Cs, 2))
+        gB = bc_III(t, rb, xy33, FLSModel(H, D, ks, Cs, 8))
         @test all(gB .<= gA .* (1 + 1e-6) .+ 1e-9)
     end
 
     @testset "BC-III single borehole (nseg > 1) is valid and below conventional FLS" begin
         g_conv = fls(t, rb, H, D, ks, Cs)
-        g_bc3  = segment_response(t, rb, [0.0 0.0], FLSModel(H, D, ks, Cs, 8))
+        g_bc3  = bc_III(t, rb, [0.0 0.0], FLSModel(H, D, ks, Cs, 8))
         @test all(isfinite, g_bc3) && all(g_bc3 .> 0) && all(diff(g_bc3) .> 0)
         @test g_bc3[end] <= g_conv[end] * (1 + 1e-6) + 1e-9
     end
 
-    @testset "Low-level 3D array overload matches high-level — segment_response" begin
+    @testset "Segment array built by hand matches _segment_g" begin
         m6 = FLSModel(H, D, ks, Cs, 6)
-        g_hl = segment_response(t, rb, xy22, m6)
-        # rebuild the segment g-array and Hseg by hand, then feed the low-level method
         nseg = m6.nseg; nb = size(xy22, 1); Hs = H / nseg
         Dseg = [D + (k - 1) * Hs for k in 1:nseg]
         r, = borefield_geometry(xy22, rb); rmat = max.(r, rb)
         seg = [(bh, k) for bh in 1:nb for k in 1:nseg]; nS = nb * nseg
-        g3D = zeros(length(t), nS, nS)
+        g3D = zeros(length(tu), nS, nS)
         for q in 1:nS, p in 1:nS
             ib, is = seg[p]; jb, js = seg[q]
-            g3D[:, p, q] = fls(t, rmat[ib, jb], Hs, Dseg[js], Hs, Dseg[is], ks, Cs)
+            g3D[:, p, q] = fls(tu, rmat[ib, jb], Hs, Dseg[js], Hs, Dseg[is], ks, Cs)
         end
-        g_ll = segment_response(g3D, fill(Hs, nS), nb * H)
-        @test isapprox(g_ll, g_hl, rtol=1e-10)
+        @test isapprox(bc_III(g3D, fill(Hs, nS), nb * H), bc_III(tu, rb, xy22, m6; interp=false),
+                       rtol=1e-10)
     end
 
-    # BC-III — stepwise time-marching solver
-    @testset "Time-marching is positive and monotonic" begin
-        g = segment_response_marching(t, rb, xy33, FLSModel(H, D, ks, Cs, 6))
-        @test all(isfinite, g) && all(g .> 0)
-        @test all(diff(g) .> 0)
-    end
-
-    @testset "Block and marching agree exactly at nseg=1 on a symmetric field" begin
-        # nseg=1 on a flux-symmetric field: fluxes never redistribute (in space or depth), so the
-        # instantaneous (block) and incremental (marching) temporal treatments coincide.
-        m1 = FLSModel(H, D, ks, Cs, 1)
-        @test isapprox(segment_response(t, rb, xy22, m1),
-                       segment_response_marching(t, rb, xy22, m1; interp=false), rtol=1e-6)
-        @test isapprox(segment_response(t, rb, [0.0 0.0], m1),
-                       segment_response_marching(t, rb, [0.0 0.0], m1; interp=false), rtol=1e-6)
-    end
-
-    @testset "Block and marching stay close once fluxes redistribute (nseg>1 or asymmetric)" begin
-        # With nseg>1 the flux redistributes along depth (even on a symmetric field), and on an
-        # asymmetric field it redistributes between boreholes; the two temporal treatments then
-        # differ by a small amount but remain the same g-function to within a few percent.
-        for (xy, ns) in ((xy22, 8), (xy33, 6))
-            m = FLSModel(H, D, ks, Cs, ns)
-            gb = segment_response(t, rb, xy, m)
-            gm = segment_response_marching(t, rb, xy, m; interp=false)
-            @test isapprox(gb, gm, rtol=0.05)
-        end
-    end
-
-    @testset "Low-level array overload matches high-level — marching" begin
-        m6 = FLSModel(H, D, ks, Cs, 6)
-        g3D, Hseg, Href = GroundResponse._segment_g(t, rb, xy22, m6)
-        g_ll = segment_response_marching(g3D, Hseg, Href)
-        g_hl = segment_response_marching(t, rb, xy22, m6; interp=false)
-        @test isapprox(g_ll, g_hl, rtol=1e-12)
+    # Deprecated names forward to bc_I and to the legacy solvers
+    @testset "Deprecated names still work" begin
+        @test isapprox((@test_deprecated uniform_flux(t, rb, xy22, m_fls)),
+                       bc_I(t, rb, xy22, m_fls; interp=false), rtol=1e-12)
+        @test (@test_deprecated successive_flux(tu, rb, xy22, m_fls; interp=false)) ==
+              successive_flux_legacy(tu, rb, xy22, m_fls; interp=false)
+        @test (@test_deprecated bloc_matrix(tu, rb, xy22, m_fls; interp=false)) ==
+              bloc_matrix_legacy(tu, rb, xy22, m_fls; interp=false)
     end
 end
 
@@ -702,6 +682,37 @@ end
     end
 end
 
+@testset "Borefield rotation (angle keyword)" begin
+    # Counter-clockwise rotation about the origin, in degrees
+    @test borefield_line(3, B; angle = 90) ≈ [0.0 0.0; 0.0 B; 0.0 2B] atol = 1e-12
+    @test borefield(:rectangle, 2, 2, B; angle = 30) ≈ borefield_rectangle(2, 2, B; angle = 30)
+    # Distances unchanged, angles to the flow changed
+    r0, θ0 = borefield_geometry(borefield_rectangle(3, 2, B), rb)
+    r1, θ1 = borefield_geometry(borefield_rectangle(3, 2, B; angle = 30), rb)
+    @test r1 ≈ r0
+    @test !(θ1 ≈ θ0)
+    # Isotropic model: same g-function; moving model: same g-function for a 180° rotation of a
+    # symmetric field, different for 90° in a non-square field
+    t = 2_592_000.0 .* (1:12)                 # monthly steps, solved directly (interp = false)
+    m = FLSModel(H, D, ks, Cs)
+    @test ground_response(t, rb, borefield_rectangle(3, 2, B; angle = 30), m; interp = false) ≈
+        ground_response(t, rb, borefield_rectangle(3, 2, B), m; interp = false)
+    mm = MILSModel(rb, ks, Cs, Cf, vD)
+    g0 = ground_response(t, rb, borefield_rectangle(3, 2, B), mm; interp = false)
+    @test ground_response(t, rb, borefield_rectangle(3, 2, B; angle = 180), mm;
+        interp = false) ≈ g0
+    @test !(ground_response(t, rb, borefield_rectangle(3, 2, B; angle = 90), mm;
+        interp = false) ≈ g0)
+    # Self distance is exactly rb on a rotated field, so a square mirrored about the flow axis
+    # (±20°) and its 90° complement (70°) give the same moving-model g-function
+    @test all(diag(borefield_geometry(borefield_rectangle(3, 3, B; angle = 20), rb)[1]) .== rb)
+    g20 = ground_response(t, rb, borefield_rectangle(3, 3, B; angle = 20), mm; interp = false)
+    @test ground_response(t, rb, borefield_rectangle(3, 3, B; angle = -20), mm;
+        interp = false) ≈ g20
+    @test ground_response(t, rb, borefield_rectangle(3, 3, B; angle = 70), mm;
+        interp = false) ≈ g20
+end
+
 # High-level interface — ground_response
 @testset "ground_response — high-level interface" begin
 
@@ -747,12 +758,9 @@ end
             rtol=1e-12)
     end
 
-    @testset "Borefield dispatch matches successive_flux directly" begin
+    @testset "Borefield dispatch matches bc_II directly" begin
         m = FLSModel(H, D, ks, Cs)
-        @test isapprox(
-            ground_response(t, rb, xy22, m),
-            successive_flux(t, rb, xy22, m),
-            rtol=1e-12)
+        @test isapprox(ground_response(t, rb, xy22, m), bc_II(t, rb, xy22, m), rtol=1e-12)
     end
 
     @testset "Borefield output is monotonically increasing" begin
@@ -768,45 +776,38 @@ end
         @test all(g22 .>= g1 .* (1 - 1e-6)) && g22[end] > g1[end]
     end
 
-    @testset "FLSModel(nseg>1) routes to BC-III (marching by default)" begin
+    @testset "FLSModel(nseg>1) routes to BC-III" begin
         m4 = FLSModel(H, D, ks, Cs, 4)
-        # nseg > 1 defaults to bc = :III with the marching solver
-        @test isapprox(ground_response(t, rb, xy22, m4; interp=false),
-                       segment_response_marching(t, rb, xy22, m4; interp=false), rtol=1e-12)
-        # the block :III solver is still reachable explicitly
-        @test isapprox(ground_response(t, rb, xy22, m4; solver=:block, interp=false),
-                       segment_response(t, rb, xy22, m4), rtol=1e-12)
-        # a single borehole evaluates the whole-borehole FLS kernel directly (nseg is ignored)
-        g_single = ground_response(t, rb, xy1, m4)
+        @test isapprox(ground_response(t, rb, xy22, m4), bc_III(t, rb, xy22, m4), rtol=1e-12)
+        # a single borehole is split into segments under BC-III
+        @test isapprox(ground_response(t, rb, xy1, m4), bc_III(t, rb, xy1, m4), rtol=1e-12)
+        # under BC-II a single borehole evaluates the whole-borehole FLS kernel directly
+        g_single = ground_response(t, rb, xy1, m4; bc=:II)
         @test all(isfinite, g_single) && all(g_single .> 0) && all(diff(g_single) .> 0)
     end
 
-    @testset "FLSModel default (nseg = 1) preserves conventional behaviour" begin
+    @testset "FLSModel default (nseg = 1) is BC-II" begin
         @test FLSModel(H, D, ks, Cs).nseg == 1
         @test isapprox(ground_response(t, rb, xy22, FLSModel(H, D, ks, Cs)),
-                       successive_flux(t, rb, xy22, FLSModel(H, D, ks, Cs)), rtol=1e-12)
+                       bc_II(t, rb, xy22, FLSModel(H, D, ks, Cs)), rtol=1e-12)
     end
 
-    @testset "bc / solver selector" begin
+    @testset "bc selector" begin
         m  = FLSModel(H, D, ks, Cs)
         m6 = FLSModel(H, D, ks, Cs, 6)
-        # BC-I → uniform_flux  (interp=false to compare the exact backend)
+        tu = 2_592_000.0 .* (1:12)
         @test isapprox(ground_response(t, rb, xy22, m; bc=:I, interp=false),
-                       uniform_flux(t, rb, xy22, m), rtol=1e-12)
-        # BC-II :block → bloc_matrix; :successive is the default
-        @test isapprox(ground_response(t, rb, xy22, m; solver=:block, interp=false),
-                       bloc_matrix(t, rb, xy22, m), rtol=1e-12)
-        @test isapprox(ground_response(t, rb, xy22, m),
-                       ground_response(t, rb, xy22, m; bc=:II, solver=:successive), rtol=1e-12)
-        # BC-III: :marching is the default solver; :block routes to segment_response
-        @test isapprox(ground_response(t, rb, xy22, m6; bc=:III, solver=:marching),
-                       segment_response_marching(t, rb, xy22, m6), rtol=1e-12)
-        @test isapprox(ground_response(t, rb, xy22, m6; interp=false),  # nseg>1 → BC-III + marching
-                       segment_response_marching(t, rb, xy22, m6; interp=false), rtol=1e-12)
-        @test isapprox(ground_response(t, rb, xy22, m6; solver=:block, interp=false),
-                       segment_response(t, rb, xy22, m6), rtol=1e-12)
+                       bc_I(t, rb, xy22, m; interp=false), rtol=1e-12)
+        @test isapprox(ground_response(tu, rb, xy22, m; bc=:II, interp=false),
+                       bc_II(tu, rb, xy22, m; interp=false), rtol=1e-12)
+        @test isapprox(ground_response(tu, rb, xy22, m6; interp=false),   # nseg > 1 → BC-III
+                       bc_III(tu, rb, xy22, m6; interp=false), rtol=1e-12)
+        # the deprecated `solver` keyword is ignored
+        @test (@test_deprecated ground_response(t, rb, xy22, m; solver=:block)) ==
+              ground_response(t, rb, xy22, m)
         # invalid selectors throw
-        @test_throws ArgumentError ground_response(t, rb, xy22, m; solver=:nope)
+        @test_throws ArgumentError ground_response(t, rb, xy22, m; bc=:IV)
         @test_throws ArgumentError ground_response(t, rb, xy22, ILSModel(ks, Cs); bc=:III)
+        @test_throws ArgumentError ground_response(t, rb, xy22, m; interp=false)   # non-uniform t
     end
 end

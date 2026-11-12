@@ -1,5 +1,5 @@
 # High-level ground_response interface: AbstractGroundModel dispatch, benchmark across
-# models (single borehole) and borefield sizes (FLS, successive flux).
+# models (single borehole) and borefield sizes (FLS, BC-II).
 
 import Pkg; Pkg.activate(@__DIR__)
 
@@ -38,8 +38,8 @@ print("  FLS  : "); @btime ground_response(t, rb, xy1, m_fls)
 print("  MILS : "); @btime ground_response(t, rb, xy1, m_mils)
 print("  MFLS : "); @btime ground_response(t, rb, xy1, m_mfls)
 
-# Borefield size scaling (FLS, successive flux)
-println("  FLS borefield  —  ground_response  (successive flux)")
+# Borefield size scaling (FLS, BC-II)
+println("  FLS borefield  —  ground_response  (BC-II)")
 bfield_sizes = [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]
 for (nx, ny) in bfield_sizes
     xy = borefield(:rectangle, nx, ny, B)

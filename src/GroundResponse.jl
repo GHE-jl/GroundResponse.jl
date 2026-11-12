@@ -34,8 +34,11 @@ export borehole_response, ground_response
 # Backends — available for direct use
 export ils, ics, fls, mils, mfls
 
-# Spatial superposition
-export bloc_matrix, successive_flux, uniform_flux, segment_response, segment_response_marching
+# Spatial superposition, by boundary condition
+export bc_I, bc_II, bc_III
+# Legacy solvers (superseded by bc_II / bc_III); the names without `_legacy` are deprecated aliases
+export successive_flux_legacy, bloc_matrix_legacy, segment_response_legacy,
+    segment_response_marching_legacy
 
 # Borefield layouts
 export borefield_geometry

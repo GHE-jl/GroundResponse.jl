@@ -55,41 +55,45 @@ Generate a layout with [`borefield`](@ref), then call [`ground_response`](@ref):
 
 ```julia
 xy = borefield(:rectangle, 3, 3, 5.0)       # 3×3 grid, 5 m spacing → 9×2 matrix
-gf = ground_response(t, rb, xy, m)          # successive_flux applied internally
+gf = ground_response(t, rb, xy, m)          # BC-II spatial superposition applied internally
 ```
 
-The field response `gf` is smaller than the single-borehole `g`, indicating larger heat transfer capability of the borefield compared to a single borehole. See [Spatial superposition](@ref) and [Borefields](@ref) for the layouts and methods.
+The field response `gf` is larger than the single-borehole `g`: each borehole is warmed by its
+neighbours, so the field needs a larger temperature change to exchange the same heat per metre. See
+[Spatial superposition](@ref) and [Borefields](@ref) for the layouts and methods.
 
-## 5. Choosing the superposition method
+## 5. Choosing the boundary condition
 
-\TODO update this section considering the newly developped spatial superposition options.
-`ground_response` uses [`successive_flux`](@ref) (fast, iterative). For a reference solution, or to
-validate it, call [`bloc_matrix`](@ref) (a direct linear solve). Both accept either a model or a
-precomputed g-array:
+The `bc` keyword of [`ground_response`](@ref) chooses how the load is shared among the boreholes;
+each boundary condition also has its own function:
 
 ```julia
-g_succ = successive_flux(t, rb, xy, m)
-g_bloc = bloc_matrix(t, rb, xy, m)
-# g_succ ≈ g_bloc — the two methods agree to within iteration tolerance
+g1 = ground_response(t, rb, xy, m; bc = :I)          # = bc_I(t, rb, xy, m): same flux everywhere
+g2 = ground_response(t, rb, xy, m)                   # = bc_II(t, rb, xy, m): equal mean temperature
+g3 = ground_response(t, rb, xy, FLSModel(H, D, ks, Cs, 8))   # = bc_III(...): 8 segments per borehole
+# g1 ≥ g2 ≥ g3 at every time
 ```
 
+BC-II (the default) is the usual choice for boreholes connected in parallel. BC-III refines it by
+letting the flux vary along each borehole, and needs an [`FLSModel`](@ref) with `nseg > 1`. BC-II
+and BC-III are solved directly by time marching (no iteration).
+
 !!! note "Time sampling and `interp`"
-    [`successive_flux`](@ref) reproduces the load history with a convolution that assumes a
-    **constant time step**. So that a log-spaced `t` (the usual choice) still gives a correct
-    result, the `interp = true` default solves on an internal constant-step grid and interpolates
-    back to your `t` — this also makes the cost independent of `length(t)`. Pass `interp = false`
-    only when `t` is already uniformly spaced. The instantaneous methods ([`bloc_matrix`](@ref),
-    [`uniform_flux`](@ref), and the single-borehole path) are spacing-independent, so for them
+    BC-II and BC-III superpose the load history of every borehole, which requires a uniform time
+    grid `t = Δt, 2Δt, …`. So that a log-spaced `t` (the usual choice) still gives a correct
+    result, the `interp = true` default solves on internal uniform blocks (hours to decades) and
+    interpolates back to your `t`; this also makes the cost independent of `length(t)`. Pass
+    `interp = false` only when `t` is already `Δt, 2Δt, …, nΔt`. For BC-I and a single borehole,
     `interp` is a pure speed-up rather than a correctness requirement.
 
 ## 6. Adding groundwater flow
 
 Switch to a moving model to include advection. The moving models take a Darcy velocity ``v_D`` and
 the groundwater heat capacity ``C_f``. Because flow (along ``+x``) breaks radial symmetry, their
-response depends on both the separation and the flow-relative angle, but through
-[`ground_response`](@ref) you still just pass the coordinate array `xy`:
+response depends on both the separation and the flow-relative angle. Through
+[`ground_response`](@ref) you still just pass the coordinate array `xy`: the distances and angles are
+computed from it internally by [`borefield_geometry`](@ref).
 
-\TODO check if this is the right call for the MILS and MFLS model (including the theta)
 ```julia
 Cf, vD = 4.2e6, 1e-6
 m_mils = MILSModel(rb, ks, Cs, Cf, vD)
@@ -109,20 +113,21 @@ groundwater carries the injected heat away. See [Moving-source models](@ref).
 
 ## 7. Working with low-level g-arrays
 
-To build a field response from a precomputed array, for example, to reuse it across superposition
-methods, evaluate a model on the geometry matrices from [`borefield_geometry`](@ref):
+To build a field response from a precomputed array, for example, to reuse it across boundary
+conditions, evaluate a model on the geometry matrices from [`borefield_geometry`](@ref). BC-II needs
+the array on a uniform grid `t = Δt, 2Δt, …`:
 
 ```julia
+tu = 2_592_000.0 .* (1:240)               # monthly steps over 20 years [s]
 r = borefield_geometry(xy, rb)[1]         # nb×nb distance matrix
-g3D = fls(t, r, H, D, ks, Cs)       # nt × nb × nb g-array
-g1 = successive_flux(g3D)                 # field g-function
-g2 = bloc_matrix(g3D)
+g3D = fls(tu, r, H, D, ks, Cs)            # nt × nb × nb g-array
+g1 = bc_I(g3D)                            # field g-functions
+g2 = bc_II(g3D)
 
 # For a moving model, also pass the angle matrix:
 r, θ = borefield_geometry(xy, rb)
-g3D = mfls(t, r, θ, H, rb, D, ks, Cs, Cf, vD)
-g1 = successive_flux(g3D)
-g2 = bloc_matrix(g3D)
+g3D = mfls(tu, r, θ, H, rb, D, ks, Cs, Cf, vD)
+g2 = bc_II(g3D)
 ```
 
 ## Validation scripts
@@ -138,7 +143,7 @@ julia --project=script/ script/script_ground_models.jl
 | Script | What it shows |
 |---|---|
 | `script_ground_models.jl` | Single-borehole comparison of ILS, ICS, FLS, MILS, MFLS on a log-time axis. |
-| `script_spatial_superposition.jl` | Block matrix vs successive flux agreement (3×3 FLS); scaling from 1×1 to 5×5. |
-| `script_borefield_layouts.jl` | A subplot figure of all six layout configurations. |
+| `script_spatial_superposition.jl` | BC-I / BC-II / BC-III on a 3×3 field; BC-III convergence with segments; scaling from 1×1 to 5×5; computing time of `bc_II` / `bc_III` against the legacy solvers; `interp = true` against an hourly direct solve. |
+| `script_borefield_layouts.jl` | All six layout configurations; g-functions of two fields rotated from 0 to 90° against the groundwater flow (FLS and MFLS). |
 | `script_ground_response.jl` | `ground_response` dispatch across all models, with `@btime` benchmarks. |
 | `script_groundwater_advection.jl` | 2-D heatmaps of FLS, MILS, MFLS at 10 yr — the asymmetric plume. |

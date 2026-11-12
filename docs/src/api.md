@@ -29,17 +29,24 @@ Modules = [GroundResponse]
 
 ### Spatial superposition methods
 
-Presented in order of increasing boundary-condition detail (BC-I → BC-II → BC-III):
+One function per boundary condition, in order of increasing detail (BC-I → BC-II → BC-III):
 
-- [`uniform_flux`](@ref) — **BC-I**: equal flux on every borehole (Guo et al., 2021)
-- [`successive_flux`](@ref) — **BC-II**: iterative equal-mean-temperature solve (Nguyen & Pasquier, 2021)
-- [`bloc_matrix`](@ref) — **BC-II**: direct block-matrix solve (Dusseault et al., 2018)
-- [`segment_response`](@ref) — **BC-III**: segment (uniform-wall-temperature) solve (Cimmino & Bernier, 2014)
-- [`segment_response_marching`](@ref) — **BC-III**: stepwise time-marching alternative to the block
-  matrix (Cimmino, 2018)
+- [`bc_I`](@ref) — **BC-I**: equal flux on every borehole (Guo et al., 2021)
+- [`bc_II`](@ref) — **BC-II**: uniform flux per borehole, equal mean wall temperature, solved by
+  time marching
+- [`bc_III`](@ref) — **BC-III**: segments with a uniform wall temperature (Cimmino & Bernier, 2014),
+  the same marching solver
 
-The boundary condition is selected on [`FLSModel`](@ref) through its optional `nseg` field
-(`nseg > 1` ⇒ BC-III).
+[`ground_response`](@ref) selects them with its `bc` keyword; BC-III is the default for an
+[`FLSModel`](@ref) with `nseg > 1`.
+
+Legacy solvers, superseded by `bc_II` / `bc_III` and kept for comparison (the names without
+`_legacy` are deprecated aliases):
+
+- [`successive_flux_legacy`](@ref) — BC-II, iterative (Nguyen & Pasquier, 2021)
+- [`bloc_matrix_legacy`](@ref) — BC-II, block matrix (Dusseault et al., 2018)
+- [`segment_response_legacy`](@ref) — BC-III, block matrix
+- [`segment_response_marching_legacy`](@ref) — BC-III, time marching on strided slices
 
 ### Borefield layouts
 

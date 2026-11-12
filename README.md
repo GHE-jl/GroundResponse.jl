@@ -11,11 +11,11 @@ model kernels (`ils`, `fls`, …) evaluate uninterpolated responses at arbitrary
 leaving system-level modelling to downstream packages such as
 [GroundHeatExchanger.jl](https://github.com/GHE-jl/GroundHeatExchanger.jl).
 
-Time discretisation *is* handled here, though, because it is intrinsic to the spatial-superposition
-methods: the temporal solvers (`successive_flux`, `segment_response_marching`) reproduce the load
-history by a convolution that assumes a **constant time step**, so an arbitrary (e.g. log-spaced)
-time vector would otherwise give a wrong answer. The high-level interface therefore sub-samples onto
-a constant-step grid internally and interpolates back to the requested times — see the `interp`
+Time discretisation *is* handled here, though, because it is intrinsic to the spatial
+superposition: under BC-II and BC-III the flux of each borehole changes in time, and its load
+history is superposed on a **uniform time grid** (`t = Δt, 2Δt, …`), so an arbitrary (e.g.
+log-spaced) time vector would otherwise give a wrong answer. The high-level interface therefore
+solves on internal uniform blocks and interpolates back to the requested times — see the `interp`
 keyword below.
 
 ## Models
@@ -81,7 +81,7 @@ kernel like any other pair and yields the borehole-wall self response, so no cas
 `ground_response` is a single entry point that dispatches over model type and borefield size:
 
 ```julia
-g = ground_response(t, rb, xy, m::AbstractGroundModel; bc = :II, solver = :successive, interp = true)
+g = ground_response(t, rb, xy, m::AbstractGroundModel; bc = :II, interp = true)
 ```
 
 - **Single borehole** (`size(xy, 1) == 1`): evaluates the model kernel at the borehole wall.
@@ -90,24 +90,24 @@ g = ground_response(t, rb, xy, m::AbstractGroundModel; bc = :II, solver = :succe
 Keywords:
 
 - **`bc`** — boundary condition of the spatial superposition:
-  - `:I` — equal, uniform heat flux on every borehole (`uniform_flux`);
-  - `:II` — uniform flux per borehole, equal mean wall temperature (default);
-  - `:III` — flux varies within each borehole for a uniform wall temperature (`FLSModel` with
-    `nseg > 1`; the default when `nseg > 1`).
-- **`solver`** — backend for the chosen `bc`: for `:II`, `:successive` (default) or `:block`; for
-  `:III`, `:marching` (default) or `:block`. (For an `FLSModel` with `nseg > 1`, `bc` and `solver`
-  default to `:III` and `:marching`.)
-- **`interp`** (default `true`) — compute on an internal constant-step sub-sampling grid and
-  PCHIP-interpolate to `t`. **One keyword, two roles**:
-  - for the **temporal** solvers (`:successive`, `:marching`) it is a *correctness* requirement on
-    any non-uniform `t` (their convolution needs a constant step), and it also bounds the cost to
-    the ~one hundred sub-sample nodes, independent of `length(t)`;
-  - for the **instantaneous / direct** backends (`:block`, `:I`, single borehole) it is a *pure
-    performance* approximation — those are exact at any `t`, so `interp` just trades a small
-    interpolation error for far fewer evaluations on a large `t`.
+  - `:I` — equal, uniform heat flux on every borehole (`bc_I`);
+  - `:II` — uniform flux per borehole, equal mean wall temperature (`bc_II`, default);
+  - `:III` — flux varies within each borehole for a uniform wall temperature (`bc_III`; `FLSModel`
+    with `nseg > 1`, where it is the default).
+- **`interp`** (default `true`) — solve on internal uniform blocks (hourly to one day, daily to one
+  month, monthly to one year, quarterly to ten years, yearly to fifty years) and PCHIP-interpolate
+  to `t` in log time. **One keyword, two roles**:
+  - for **BC-II and BC-III** it is a *correctness* requirement on any `t` that is not
+    `Δt, 2Δt, …, nΔt` (their load history needs a uniform grid), and it also bounds the cost to
+    about two hundred solved times, independent of `length(t)`;
+  - for **BC-I and a single borehole** it is a *pure performance* approximation — those are exact
+    at any `t`, so `interp` just trades a small interpolation error for far fewer evaluations on a
+    large `t`.
 
-  Pass `interp = false` to compute directly at the requested `t` (the temporal solvers then require
-  a uniformly spaced `t`).
+  Pass `interp = false` to compute directly at the requested `t` (BC-II and BC-III then require
+  `t = Δt, 2Δt, …, nΔt`, and reject any other `t`).
+- **`solver`** — deprecated and ignored since 2.2.0 (BC-II and BC-III are always solved by time
+  marching).
 
 ```julia
 using GroundResponse
@@ -132,34 +132,40 @@ g = ground_response(t, rb, xy, m_mfls)
 
 ## Spatial Superposition
 
-Several methods compute the borefield g-function from single-borehole responses. Each accepts either
-a precomputed `nt × nb × nb` g-matrix (low-level kernel) or borefield parameters with any
-`AbstractGroundModel` (high-level, dispatching through `_borehole_response`):
+One function per boundary condition computes the borefield g-function from the single-borehole
+responses. Each accepts either a precomputed `nt × nb × nb` g-matrix (low-level kernel) or borefield
+parameters with any `AbstractGroundModel` (high-level, dispatching through `_borehole_response`):
 
-| Function | BC | Temporal treatment | `t`-spacing |
-|----------|----|--------------------|-------------|
-| `uniform_flux` | I | instantaneous per step | independent |
-| `successive_flux` | II | **temporal** (spectral convolution, Nguyen & Pasquier 2021) | needs constant step |
-| `bloc_matrix` | II | instantaneous per step (block formulation) | independent |
-| `segment_response` | III | instantaneous per step | independent |
-| `segment_response_marching` | III | **temporal** (incremental convolution) | needs constant step |
+| Function | BC | Solution | `t`-spacing |
+|----------|----|----------|-------------|
+| `bc_I` | I — same flux on every borehole (Guo et al., 2021) | sum, no solve | independent |
+| `bc_II` | II — uniform flux per borehole, equal mean wall temperature | direct, time marching | `Δt, 2Δt, …` |
+| `bc_III` | III — segments, uniform wall temperature (Cimmino & Bernier, 2014) | direct, time marching | `Δt, 2Δt, …` |
 
-The **temporal** solvers require a constant time step; their model-level methods take
-`interp = true` (default) to sub-sample onto a valid grid and interpolate back — see the `interp`
-keyword above. The **instantaneous** methods are spacing-independent and need no sub-sampling for
-correctness. (The block/instantaneous methods differ from the temporal ones by ~1% on strongly
-asymmetric fields — the classic instantaneous-vs-history trade-off.)
+Under BC-II and BC-III the flux of each borehole (or segment) changes in time, so each time step
+solves a small system for the flux increments and the common wall temperature, with the load
+history of the previous steps on the right-hand side. This is the block-matrix system of Dusseault
+et al. (2018) solved by forward substitution: same solution, no iteration, a fraction of the cost.
+`bc_III` with `nseg = 1` is `bc_II`.
 
 ```julia
-# High-level: pass model directly (temporal solvers take `interp`)
-g = successive_flux(t, rb, xy, FLSModel(150.0, 4.0, ks, Cs))          # interp = true (default)
-g = bloc_matrix(t, rb, xy, MILSModel(rb, ks, Cs, Cf, vD))            # instantaneous, exact at any t
+# High-level: pass the model directly (interp = true by default)
+g = bc_I(t, rb, xy, MILSModel(rb, ks, Cs, Cf, vD))
+g = bc_II(t, rb, xy, FLSModel(150.0, 4.0, ks, Cs))
+g = bc_III(t, rb, xy, FLSModel(150.0, 4.0, ks, Cs, 8))
 
-# Low-level: pass precomputed 3D g-matrix (kernels assume a constant step for the temporal methods)
+# Low-level: pass a precomputed 3D g-matrix on t = Δt, 2Δt, …
+tu  = 2_592_000.0 .* (1:240)                      # monthly steps over 20 years [s]
 r3D = borefield_geometry(xy, rb)[1]               # nb×nb distance matrix
-g3D = fls(t, r3D, 150.0, 4.0, ks, Cs)            # nt × nb × nb
-g   = successive_flux(g3D)
+g3D = fls(tu, r3D, 150.0, 4.0, ks, Cs)           # nt × nb × nb
+g   = bc_II(g3D)
 ```
+
+The solvers used before 2.2.0 are kept for comparison as `successive_flux_legacy` (iterative,
+Nguyen & Pasquier, 2021), `bloc_matrix_legacy` and `segment_response_legacy` (block matrix, corrected
+in 2.2.0 to include the load history) and `segment_response_marching_legacy`. Their former names
+(`successive_flux`, `bloc_matrix`, `segment_response`, `segment_response_marching`, and
+`uniform_flux` for `bc_I`) still work as deprecated aliases.
 
 ## Borefield Layout Functions
 
@@ -179,7 +185,10 @@ corresponding layout function. All layout functions are also exported individual
 | `borefield(:open_rectangle, nx, ny, B)` | hollow rectangle, boreholes on perimeter only | `2(nx+ny-2)` |
 | `borefield(:open_rectangle, nx, ny, Bx, By)` | hollow rectangle with independent spacings | `2(nx+ny-2)` |
 
-All functions return an `nb×2` matrix of borehole coordinates `[x y]`.
+All functions return an `nb×2` matrix of borehole coordinates `[x y]`. The `angle` keyword [°]
+rotates the field counter-clockwise about the origin, e.g. `borefield(:rectangle, 3, 3, 5.0;
+angle = 30)`, to orient it relative to the groundwater flow (+x) of the moving models or to the
+site for a plot.
 
 `borefield_geometry(xy, rb)` returns `(r, θ)`: the pairwise distance matrix (diagonal `rb`) and the
 flow-relative angle matrix in degrees (diagonal `0`). These two matrices are what the models
@@ -190,8 +199,8 @@ and how many borehole pairs share each — you can derive it directly from `r` a
 ## Extending with Custom Models
 
 Subtype `AbstractGroundModel` and add a single `_borehole_response` method returning the pairwise
-`nt × nb × nb` response array. Every backend (`successive_flux`, `bloc_matrix`, `uniform_flux`) and
-the `ground_response` interface — including `interp` sub-sampling — then work automatically:
+`nt × nb × nb` response array. `bc_I`, `bc_II` and the `ground_response` interface — including
+`interp` sub-sampling — then work automatically:
 
 ```julia
 struct MyModel <: AbstractGroundModel
@@ -219,8 +228,8 @@ julia --project=script/ -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 | Script | Description |
 |--------|-------------|
 | `script_ground_models.jl` | Single-borehole g-function comparison: ILS, ICS, FLS, MILS, MFLS on a log-spaced time axis |
-| `script_spatial_superposition.jl` | Bloc matrix vs successive flux agreement (3×3 FLS); g-function scaling from 1×1 to 5×5 |
-| `script_borefield_layouts.jl` | Subplot figure of all six layout configurations (~50 boreholes each) |
+| `script_spatial_superposition.jl` | BC-I / BC-II / BC-III on a 3×3 field; BC-III convergence with segments; g-function scaling from 1×1 to 5×5; computing time of `bc_II` / `bc_III` against the legacy solvers; `interp = true` against an hourly direct solve |
+| `script_borefield_layouts.jl` | Subplot figure of all six layout configurations (~50 boreholes each); g-functions of two fields rotated from 0 to 90° against the groundwater flow (FLS and MFLS) |
 | `script_ground_response.jl` | `ground_response` dispatch across all models; `@btime` benchmark for single borehole and borefield sizes |
 | `script_groundwater_advection.jl` | 2D spatial heatmap comparing FLS, MILS, and MFLS at t = 10 yr; asymmetric plume visible for moving models |
 
@@ -247,7 +256,7 @@ pkg> add GroundResponse
 |---------|----------|
 | [SpecialFunctions.jl](https://github.com/JuliaMath/SpecialFunctions.jl) | `expinti`, `erf`, Bessel functions in ILS / ICS / MILS / MFLS kernels |
 | [QuadGK.jl](https://github.com/JuliaMath/QuadGK.jl) | Numerical integration in FLS, ICS, MFLS |
-| [DSP.jl](https://github.com/JuliaDSP/DSP.jl) | `conv` for the successive flux iterative solver |
+| [DSP.jl](https://github.com/JuliaDSP/DSP.jl) | `conv` for the legacy successive flux solver (`successive_flux_legacy`) |
 | [PCHIPInterpolation.jl](https://github.com/gerlero/PCHIPInterpolation.jl) | Interpolating the sub-sampled g-function back to the requested times (`interp`) |
 | [LinearAlgebra](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/) | Matrix operations (stdlib) |
 
@@ -272,6 +281,7 @@ pkg> add GroundResponse
 
 ### Spatial Superposition
 
+- Cimmino, M., Bernier, M., & Adams, F. (2013). A contribution towards the determination of g-functions using the finite line source. *Applied Thermal Engineering*, 51(1–2), 401–412. https://doi.org/10.1016/j.applthermaleng.2012.07.044
 - Cimmino, M. (2018). Fast calculation of the g-functions of geothermal borehole fields using similarities in the evaluation of the finite line source solution. *Journal of Building Performance Simulation*, 11(6), 655–668. https://doi.org/10.1080/19401493.2017.1423390
 - Dusseault, B., Pasquier, P., & Marcotte, D. (2018). A block matrix formulation for efficient g-function construction. *Renewable Energy*, 121, 249–260. https://doi.org/10.1016/j.renene.2017.12.092
 - Nguyen, A., & Pasquier, P. (2021). A successive flux estimation method for rapid g-function construction of small to large-scale ground heat exchanger. *Renewable Energy*, 165, 359–368. https://doi.org/10.1016/j.renene.2020.10.074

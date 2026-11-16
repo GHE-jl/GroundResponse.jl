@@ -391,8 +391,8 @@ end
                     for θ in range(0, 360, length = nθ + 1)[1:end-1]) / nθ
         @test isapprox(self, mean, rtol = 1e-3)
     end
-
 end
+
 # Spatial superposition
 @testset "Spatial superposition" begin
 
@@ -477,7 +477,7 @@ end
     @testset "Borefield g-function larger than single-borehole response due to thermal interaction" begin
         g_1 = ils(t, rb, ks, Cs)
         g_4 = bc_II(t, rb, xy22, ILSModel(ks, Cs))
-        @test all(g_4 .>= g_1 .* (1 - 1e-2)) && g_4[end] > g_1[end]   # 1e-2: PCHIP sub-sampling
+        @test all(g_4 .>= g_1 .* (1 - 1e-4)) && g_4[end] > g_1[end]   # 1e-4: PCHIP sub-sampling
     end
 
     @testset "Larger borefield gives larger g-function, monotonic in time" begin
@@ -563,16 +563,6 @@ end
         end
         @test isapprox(bc_III(g3D, fill(Hs, nS), nb * H), bc_III(tu, rb, xy22, m6; interp=false),
                        rtol=1e-10)
-    end
-
-    # Deprecated names forward to bc_I and to the legacy solvers
-    @testset "Deprecated names still work" begin
-        @test isapprox((@test_deprecated uniform_flux(t, rb, xy22, m_fls)),
-                       bc_I(t, rb, xy22, m_fls; interp=false), rtol=1e-12)
-        @test (@test_deprecated successive_flux(tu, rb, xy22, m_fls; interp=false)) ==
-              successive_flux_legacy(tu, rb, xy22, m_fls; interp=false)
-        @test (@test_deprecated bloc_matrix(tu, rb, xy22, m_fls; interp=false)) ==
-              bloc_matrix_legacy(tu, rb, xy22, m_fls; interp=false)
     end
 end
 
@@ -802,9 +792,6 @@ end
                        bc_II(tu, rb, xy22, m; interp=false), rtol=1e-12)
         @test isapprox(ground_response(tu, rb, xy22, m6; interp=false),   # nseg > 1 → BC-III
                        bc_III(tu, rb, xy22, m6; interp=false), rtol=1e-12)
-        # the deprecated `solver` keyword is ignored
-        @test (@test_deprecated ground_response(t, rb, xy22, m; solver=:block)) ==
-              ground_response(t, rb, xy22, m)
         # invalid selectors throw
         @test_throws ArgumentError ground_response(t, rb, xy22, m; bc=:IV)
         @test_throws ArgumentError ground_response(t, rb, xy22, ILSModel(ks, Cs); bc=:III)

@@ -27,7 +27,6 @@ makedocs(;
             "Overview" => "theory/overview.md",
             "Line-source models" => "theory/line_source.md",
             "Moving-source models" => "theory/moving_source.md",
-            "Spatial superposition" => "theory/superposition.md",
         ],
         "Borefields" => "borefield.md",
         "API reference" => "api.md",

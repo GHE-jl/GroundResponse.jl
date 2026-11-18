@@ -1,22 +1,22 @@
 # Borefields
 
-Spatial superposition needs the coordinates of every borehole in the field. This page documents the
+A borefield response needs the coordinates of every borehole in the field. This page documents the
 layout generators that produce those coordinates and the [`borefield_geometry`](@ref) helper that
-turns them into the pairwise distance and angle matrices consumed by [`bc_I`](@ref), [`bc_II`](@ref)
-and [`bc_III`](@ref).
+turns them into the pairwise distance and angle matrices consumed by [`gmatrix`](@ref) and the
+kernels.
 
 ## Coordinate convention
 
 Every layout function returns an ``n_b \times 2`` matrix of ``[x \ y]`` coordinates in metres. That
-matrix is exactly what [`ground_response`](@ref) and the superposition methods expect:
+matrix is exactly what [`gmatrix`](@ref) expects:
 
 ```julia
 xy = borefield(:rectangle, 3, 4, 6.0)    # 3×4 grid, 6 m spacing → 12×2 matrix
-g  = ground_response(t, rb, xy, model)   # superposition applied automatically
+G  = gmatrix(t, rb, xy, model)           # nt × 12 × 12 response array
 ```
 
-A single borehole is just `[0.0 0.0]` (a `1×2` matrix), which routes `ground_response` to the
-direct single-borehole branch.
+A single borehole is just `[0.0 0.0]` (a `1×2` matrix), for which `gmatrix` returns the borehole
+self response.
 
 ## The unified entry point
 
@@ -48,7 +48,7 @@ An unknown shape symbol raises an `ArgumentError` listing the valid options.
 
 ## The pairwise-geometry helper
 
-[`borefield_geometry`](@ref) computes the geometry that spatial superposition operates on. Given the
+[`borefield_geometry`](@ref) computes the geometry that the response arrays are built on. Given the
 coordinates and the borehole radius it returns the pairwise distance matrix `r` (with the diagonal
 set to `rb`) and the flow-relative angle matrix `θ` in degrees (with the diagonal set to `0`). The
 isotropic models (ILS, ICS, FLS) use only `r`; the moving models (MILS, MFLS) additionally use `θ`,

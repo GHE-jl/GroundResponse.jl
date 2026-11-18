@@ -1,5 +1,4 @@
 [deps]
-BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 GroundResponse = "4e068bfd-c84d-4e7d-af33-179ff9550968"
 
@@ -7,7 +6,5 @@ GroundResponse = "4e068bfd-c84d-4e7d-af33-179ff9550968"
 GroundResponse = {path = ".."}
 
 [compat]
-
-BenchmarkTools = "1"
 CairoMakie = "0.15"
 julia = "1.11"

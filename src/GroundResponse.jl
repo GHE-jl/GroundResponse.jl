@@ -3,12 +3,9 @@ module GroundResponse
 using SpecialFunctions
 using QuadGK
 using LinearAlgebra
-using DSP
-using PCHIPInterpolation: Interpolator
 
-# Model abstraction: the AbstractGroundModel type, the concrete model structs, the per-model
-# `_borehole_response` extension point, and the high-level `ground_response` dispatcher. Included
-# first so its types are available to the kernels and the superposition backends below.
+# Model abstraction: the AbstractGroundModel type, the concrete model structs and the per-model
+# `gmatrix` extension point. Included first so its types are available to the kernels below.
 include("model_response.jl")
 
 # Ground response kernels
@@ -18,9 +15,7 @@ include("finite_line_source.jl")            # fls  — Claesson & Javed (2011)
 include("moving_infinite_line_source.jl")   # mils — Pasquier & Lamarche (2022)
 include("moving_finite_line_source.jl")     # mfls — Guo et al. (2020)
 
-# Time sub-sampling / interpolation, then the spatial-superposition backends and borefield layouts.
-include("time_sampling.jl")
-include("spatial_superposition.jl")
+# Borefield layouts and pairwise geometry
 include("borefield.jl")
 
 # Exports
@@ -28,17 +23,11 @@ include("borefield.jl")
 export AbstractGroundModel
 export ILSModel, ICSModel, FLSModel, MILSModel, MFLSModel
 
-# High-level interface
-export borehole_response, ground_response
+# Response arrays of a borefield (boreholes or segments)
+export gmatrix
 
-# Backends — available for direct use
+# Kernels
 export ils, ics, fls, mils, mfls
-
-# Spatial superposition, by boundary condition
-export bc_I, bc_II, bc_III
-# Legacy solvers (superseded by bc_II / bc_III); the names without `_legacy` are deprecated aliases
-export successive_flux_legacy, bloc_matrix_legacy, segment_response_legacy,
-    segment_response_marching_legacy
 
 # Borefield layouts
 export borefield_geometry

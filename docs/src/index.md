@@ -8,7 +8,7 @@ load injected into the ground to the resulting temperature rise at the borehole 
 *outside* the borehole, where [`BoreholeResistance.jl`](https://github.com/GHE-jl/BoreholeResistance.jl) stops.
 
 The package implements five analytical models, each available both as a **raw function** and as an
-`AbstractGroundModel` **type** for the high-level interface:
+`AbstractGroundModel` **type** for [`gmatrix`](@ref):
 
 | Model | Function | Type | Captures |
 |---|---|---|---|
@@ -18,18 +18,15 @@ The package implements five analytical models, each available both as a **raw fu
 | Moving infinite line source | [`mils`](@ref) | [`MILSModel`](@ref) | groundwater advection |
 | Moving finite line source | [`mfls`](@ref) | [`MFLSModel`](@ref) | groundwater advection + finite depth |
 
-On top of the single-borehole models, **spatial superposition** assembles the response of an
-arbitrary **borehole field** under three boundary conditions — [`bc_I`](@ref) (same flux on every
-borehole), [`bc_II`](@ref) (equal mean wall temperature) and [`bc_III`](@ref) (uniform wall
-temperature with segments) — the last two solved directly by time marching. A family of
+On top of the single-borehole models, [`gmatrix`](@ref) assembles the pairwise response array of an
+arbitrary **borehole field**, per borehole or per borehole segment. The spatial superposition of
+that array into the field g-function under the boundary conditions BC-I to BC-IV is done by
+[`GroundHeatExchanger.jl`](https://github.com/GHE-jl/GroundHeatExchanger.jl). A family of
 [`borefield`](@ref) helpers generates common field layouts, rotated if needed.
 
 The package depends only on
 [`SpecialFunctions.jl`](https://github.com/JuliaMath/SpecialFunctions.jl),
-[`QuadGK.jl`](https://github.com/JuliaMath/QuadGK.jl),
-[`PCHIPInterpolation.jl`](https://github.com/gerlero/PCHIPInterpolation.jl),
-[`DSP.jl`](https://github.com/JuliaDSP/DSP.jl) (for the legacy successive-flux solver) and the
-`LinearAlgebra` standard library.
+[`QuadGK.jl`](https://github.com/JuliaMath/QuadGK.jl) and the `LinearAlgebra` standard library.
 
 ## What a g-function is
 
@@ -71,21 +68,21 @@ t      = 3600.0 .* exp10.(range(0, log10(8760*25), length = 200))   # 1 h → 25
 
 # Single borehole — finite line source
 m = FLSModel(150.0, 4.0, ks, Cs)            # H = 150 m, D = 4 m
-g = ground_response(t, rb, [0.0 0.0], m)    # g-function [°C·m/W]
+g = gmatrix(t, rb, [0.0 0.0], m)            # g-function [°C·m/W]
 
-# Borefield — spatial superposition applied automatically
+# Borefield — pairwise response array
 xy = borefield(:rectangle, 3, 3, 5.0)       # 3×3 grid, 5 m spacing
-gf = ground_response(t, rb, xy, m)
+G = gmatrix(t, rb, xy, m)                   # nt × 9 × 9
 ```
 
 ## Manual outline
 
 - **[Tutorial](@ref)** — a worked single-borehole and borefield example, step by step.
 - **Modeling theory** — the physics behind each model, with governing equations and references:
-  - [Overview](@ref) — what a g-function is, the dispatch conventions and the high-level interface.
+  - [Overview](@ref) — what a g-function is, the dispatch conventions and the borefield response
+    arrays.
   - [Line-source models](@ref) — ILS, ICS and FLS for purely conductive ground.
   - [Moving-source models](@ref) — MILS and MFLS for ground with groundwater advection.
-  - [Spatial superposition](@ref) — building a borefield response from single-borehole responses.
 - **[Borefields](@ref Borefields)** — the layout generators and the pairwise-radius helper.
 - **[API reference](@ref)** — the complete docstring reference for every exported symbol.
 - **[References](@ref)** — the bibliography underpinning each model.
@@ -121,8 +118,9 @@ gf = ground_response(t, rb, xy, m)
 | Package | Role |
 |---|---|
 | **BoreholeResistance.jl** | Water properties + borehole thermal resistances (inside the borehole). |
-| **GroundResponse.jl** | Ground *g*-function models and spatial superposition (this package). |
-| **GroundHeatExchanger.jl** | Simulation orchestration; depends on and re-exports both. |
+| **GroundResponse.jl** | Ground *g*-function models and borefield response arrays (this package). |
+| **GroundHeatExchanger.jl** | Spatial superposition and simulation orchestration; depends on and re-exports both. |
 
 Calling `using GroundHeatExchanger` re-exports every model and borefield function documented
-here, and adds temporal superposition and fluid-temperature routines on top.
+here, and adds the borefield g-functions under BC-I to BC-IV, temporal superposition and
+fluid-temperature routines on top.

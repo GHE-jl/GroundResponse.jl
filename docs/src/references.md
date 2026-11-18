@@ -27,37 +27,20 @@ The models implemented in this package are drawn from the following sources.
   214, 109859. <https://doi.org/10.1016/j.enbuild.2020.109859>
   The moving finite line source (MFLS) implemented in [`mfls`](@ref).
 
-## Borefield spatial superposition
-
-- **Guo, Y., Hu, X., Banks, J., & Liu, W. V.** (2021). Considering buried depth for vertical
-  borehole heat exchangers in a borehole field with groundwater flow — An extended solution.
-  *Energy and Buildings*, 235, 110722. <https://doi.org/10.1016/j.enbuild.2021.110722>
-  The uniform-flux superposition (M1) of [`bc_I`](@ref).
+## Borefield response arrays
 
 - **Cimmino, M., & Bernier, M.** (2014). A semi-analytical method to generate g-functions for
   geothermal bore fields. *International Journal of Heat and Mass Transfer*, 70, 641–650.
   <https://doi.org/10.1016/j.ijheatmasstransfer.2013.11.037>
-  The boundary conditions, the segment discretisation of [`bc_III`](@ref) and the time-marching
-  solution of [`bc_II`](@ref) / [`bc_III`](@ref).
+  The segment-to-segment finite line source of [`fls`](@ref) and the segment array of
+  [`gmatrix`](@ref).
 
-- **Cimmino, M., Bernier, M., & Adams, F.** (2013). A contribution towards the determination of
-  g-functions using the finite line source. *Applied Thermal Engineering*, 51(1–2), 401–412.
-  <https://doi.org/10.1016/j.applthermaleng.2012.07.044>
-  The geometric hour → decade sub-sampling of the time axis used by `interp = true`.
+- **Cimmino, M.** (2015). The effects of borehole thermal resistances and fluid flow rate on the
+  g-functions of geothermal bore fields. *International Journal of Heat and Mass Transfer*, 91,
+  1119–1127. <https://doi.org/10.1016/j.ijheatmasstransfer.2015.08.041>
+  The BC-IV superposition that uses the segment array of [`gmatrix`](@ref).
 
 - **Dusseault, B., Pasquier, P., & Marcotte, D.** (2018). A block matrix formulation for efficient
   g-function construction. *Renewable Energy*, 121, 249–260.
   <https://doi.org/10.1016/j.renene.2017.12.092>
-  The block-matrix system that the marching solver solves by forward substitution, and the method
-  behind [`bloc_matrix_legacy`](@ref) and [`segment_response_legacy`](@ref).
-
-- **Nguyen, A., & Pasquier, P.** (2021). A successive flux estimation method for rapid g-function
-  construction of small to large-scale ground heat exchanger. *Renewable Energy*, 165, 359–368.
-  <https://doi.org/10.1016/j.renene.2020.10.074>
-  The successive-flux method behind [`successive_flux_legacy`](@ref), and the sub-sampling of the
-  time axis.
-
-- **Cimmino, M.** (2018). Fast calculation of the g-functions of geothermal borehole fields using
-  similarities in the evaluation of the finite line source solution. *Journal of Building
-  Performance Simulation*, 11(6), 655–668. <https://doi.org/10.1080/19401493.2017.1423390>
-  The time-marching BC-III solver behind [`segment_response_marching_legacy`](@ref).
+  The block-matrix formulation whose response array ``G`` is returned by [`gmatrix`](@ref).

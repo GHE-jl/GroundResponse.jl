@@ -23,30 +23,13 @@ Modules = [GroundResponse]
 - [`mils`](@ref) — moving infinite line source
 - [`mfls`](@ref) — moving finite line source
 
-### High-level interface
+### Borefield response arrays
 
-- [`ground_response`](@ref) — dispatch over model type and field size
+- [`gmatrix`](@ref) — pairwise response array of a borefield, per borehole or per segment
 
-### Spatial superposition methods
-
-One function per boundary condition, in order of increasing detail (BC-I → BC-II → BC-III):
-
-- [`bc_I`](@ref) — **BC-I**: equal flux on every borehole (Guo et al., 2021)
-- [`bc_II`](@ref) — **BC-II**: uniform flux per borehole, equal mean wall temperature, solved by
-  time marching
-- [`bc_III`](@ref) — **BC-III**: segments with a uniform wall temperature (Cimmino & Bernier, 2014),
-  the same marching solver
-
-[`ground_response`](@ref) selects them with its `bc` keyword; BC-III is the default for an
-[`FLSModel`](@ref) with `nseg > 1`.
-
-Legacy solvers, superseded by `bc_II` / `bc_III` and kept for comparison (the names without
-`_legacy` are deprecated aliases):
-
-- [`successive_flux_legacy`](@ref) — BC-II, iterative (Nguyen & Pasquier, 2021)
-- [`bloc_matrix_legacy`](@ref) — BC-II, block matrix (Dusseault et al., 2018)
-- [`segment_response_legacy`](@ref) — BC-III, block matrix
-- [`segment_response_marching_legacy`](@ref) — BC-III, time marching on strided slices
+The spatial superposition of these arrays under BC-I to BC-IV (`bc_I`, `bc_II`, `bc_III`, `bc_IV`
+and `ground_response`) is in
+[GroundHeatExchanger.jl](https://github.com/GHE-jl/GroundHeatExchanger.jl).
 
 ### Borefield layouts
 
@@ -57,5 +40,5 @@ Legacy solvers, superseded by `bc_II` / `bc_III` and kept for comparison (the na
 
 !!! tip "Where the docstrings live"
     Full signatures and argument lists are rendered inline on the theory pages:
-    [Overview](@ref), [Line-source models](@ref), [Moving-source models](@ref),
-    [Spatial superposition](@ref) and [Borefields](@ref).
+    [Overview](@ref), [Line-source models](@ref), [Moving-source models](@ref) and
+    [Borefields](@ref).

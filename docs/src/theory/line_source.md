@@ -48,6 +48,8 @@ The implementation in [`ics`](@ref) integrates this kernel with adaptive Gaussâ€
 - for ``\tilde r > 20`` the cylinder is indistinguishable from a line, so the function returns the
   ILS result directly;
 
+[`ICSModel`](@ref) takes the borehole radius as the cylinder radius, ``r_c = r_b``.
+
 ## Finite line source (FLS)
 
 Real boreholes have a finite active length ``H`` buried a distance ``D`` below the surface. The FLS
@@ -78,6 +80,11 @@ The four ``\mathrm{ierf}`` terms encode the real source over ``[D, D+H]`` and it
 across the surface. The lower integration limit ``1/\sqrt{4\alpha t}`` carries the time dependence,
 so larger ``t`` integrates closer to the singularity at ``s = 0`` and yields a larger response.
 [`fls`](@ref) evaluates this with Gaussâ€“Kronrod quadrature.
+
+The general **segment-to-segment** form, `fls(t, r, H1, D1, H2, D2, ks, Cs)` (Cimmino & Bernier,
+2014), gives the mean response over a receiving segment ``(H_2, D_2)`` to a unit flux on an emitting
+segment ``(H_1, D_1)``; the form above is the case ``H_1 = H_2 = H``, ``D_1 = D_2 = D``. It builds
+the segment array of [`gmatrix`](@ref) (see [Overview](@ref)).
 
 The FLS is the recommended default for most simulations: it captures both the short-time behaviour
 reasonably and the long-time steady state that the ILS misses.

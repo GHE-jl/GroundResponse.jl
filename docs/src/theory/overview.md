@@ -1,8 +1,7 @@
 # Overview
 
 This page describes the role of a ground thermal response function, the conventions every model in
-the package shares, and the high-level [`ground_response`](@ref) interface that dispatches over
-model type and field size.
+the package shares, and the [`gmatrix`](@ref) response arrays of a borefield.
 
 ## The ground response function
 
@@ -20,7 +19,7 @@ ground-conductivity normalisation (the ``1/(4\pi k_s)`` exponential-integral pre
 analogues) already folded into the returned value — so no extra scaling is needed to obtain a
 temperature from a load. A constant unit impulse of 1 W/m therefore yields ``\Delta T = g``.
 
-## What each model adds
+## Components of each model
 
 | Model | Geometry | Extra physics over ILS |
 |---|---|---|
@@ -36,7 +35,7 @@ moving models break the radial symmetry of all three when groundwater flows.
 ## Dispatch conventions
 
 All model functions are overloaded on the type of the time argument `t` and the spatial argument,
-with **no runtime branching** — the output shape is determined entirely by the input types. This
+with **no runtime branching** (the output shape is determined entirely by the input types). This
 lets the same function serve a single evaluation, a time series, a radial profile, or a full
 borefield g-array.
 
@@ -73,52 +72,61 @@ The `r` and `θ` matrices come from [`borefield_geometry`](@ref). Its diagonal s
 ``(r_b, 0)`` flows through the kernel like any other pair and yields the borehole-wall self response,
 so the diagonal is not special-cased.
 
-## The high-level interface
+## Borefield response arrays
 
-[`ground_response`](@ref) is the single entry point. It takes the time vector, the borehole radius,
-the borehole coordinates and a ground model, and returns the g-function for 1 W/m on every borehole:
+[`gmatrix`](@ref) turns a ground model into the response array of a borefield, the ``G`` of the
+block-matrix formulation of Dusseault et al. (2018). It takes the time vector, the borehole radius,
+the borehole coordinates and a ground model:
 
 ```julia
-ground_response(t, rb, xy, m; bc, interp = true)
+gmatrix(t, rb, xy, m)
+gmatrix(t, rb, xy, m::FLSModel, nseg)
 ```
 
 It dispatches on the number of boreholes:
 
-- **Single borehole** (`size(xy, 1) == 1`): the model evaluated at the borehole wall radius `rb`.
-- **Multiple boreholes**: the spatial superposition of the pairwise responses under the boundary
-  condition `bc`:
-    - `bc = :I` — every borehole emits the same flux ([`bc_I`](@ref));
-    - `bc = :II` — the flux is uniform along each borehole and the mean wall temperature is the same
-      for every borehole ([`bc_II`](@ref)); the default;
-    - `bc = :III` — each borehole is split into `nseg` segments whose fluxes give a uniform wall
-      temperature over the field ([`bc_III`](@ref)); [`FLSModel`](@ref) only, and the default when
-      its `nseg > 1`. A single borehole is then split into segments too.
+- **Single borehole** (`size(xy, 1) == 1`): the borehole self response at the wall radius `rb`,
+  a vector over `t`.
+- **Multiple boreholes**: the pairwise response array, sized ``n_t \times n_b \times n_b``, whose
+  entry `[k, i, j]` is the response at borehole ``i`` to a unit flux (1 W/m) at borehole ``j``:
 
-BC-II and BC-III are solved by time marching on a uniform time grid. With `interp = true` (the
-default), the g-function is solved on internal uniform blocks from one hour to decades and
-interpolated to `t`, so any `t` can be requested; `interp = false` solves directly on a `t` that is
-already `Δt, 2Δt, …, nΔt`. For a single borehole and BC-I, `interp` is a performance choice only.
-See [Spatial superposition](@ref) for the boundary conditions, the solver and the time sampling.
+```math
+g_{ij}(t) = g\bigl(r_{ij}, \theta_{ij}, t\bigr), \qquad
+r_{ij} = \begin{cases} \lVert \mathbf{x}_i - \mathbf{x}_j \rVert & i \ne j \\ r_b & i = j, \end{cases}
+```
+
+where ``\theta_{ij}`` is the angle of the source→receiver direction relative to the flow (``+x``);
+for the isotropic models the ``\theta`` dependence drops out. Both matrices come from
+[`borefield_geometry`](@ref).
+
+The second method, for an [`FLSModel`](@ref) only, splits each borehole into `nseg` segments of
+equal length and returns the ``n_t \times n_S \times n_S`` array between the ``n_S = n_b \cdot
+n_{seg}`` segments, built from the segment-to-segment [`fls`](@ref) kernel. The arrays are evaluated
+directly at the requested `t`.
 
 ```julia
 m = FLSModel(150.0, 4.0, 3.0, 2.0e6)
 xy = borefield(:rectangle, 3, 3, 5.0)
-g_single = ground_response(t, rb, [0.0 0.0], m)                           # single borehole
-g_bc1 = ground_response(t, rb, xy, m; bc = :I)                            # BC-I
-g_bc2 = ground_response(t, rb, xy, m)                                     # BC-II
-g_bc3 = ground_response(t, rb, xy, FLSModel(150.0, 4.0, 3.0, 2.0e6, 8))   # BC-III, 8 segments
+g_single = gmatrix(t, rb, [0.0 0.0], m)      # single borehole, nt-vector
+G = gmatrix(t, rb, xy, m)                    # nt × 9 × 9
+Gs = gmatrix(t, rb, xy, m, 8)                # nt × 72 × 72, 8 segments per borehole
 ```
 
 This keeps user code independent of which model is used: swapping `FLSModel` for `MFLSModel`
 changes only the model object, not the call.
 
+The spatial superposition of these arrays into the borefield g-function under the boundary
+conditions BC-I to BC-IV, with the time sub-sampling it needs, is done by
+[GroundHeatExchanger.jl](https://github.com/GHE-jl/GroundHeatExchanger.jl) (`ground_response`,
+`bc_I` to `bc_IV`). This package only provide the calculation of analytical models, not the full borefield g-function.
+
 ## Extending with custom models
 
 `AbstractGroundModel` is the extension point, defined in
 [`src/model_response.jl`](https://github.com/GHE-jl/GroundResponse.jl/blob/main/src/model_response.jl).
-Subtype it and add a single `_borehole_response` method returning the pairwise `nt × nb × nb`
-response array: [`bc_I`](@ref), [`bc_II`](@ref) and the `ground_response` interface (including the
-`interp` sub-sampling) then work with no further overloads:
+Subtype it and add a single [`gmatrix`](@ref) method returning the pairwise `nt × nb × nb`
+response array: the spatial superposition of GroundHeatExchanger.jl then works with no further
+overloads:
 
 ```julia
 struct MyModel <: AbstractGroundModel
@@ -126,7 +134,7 @@ struct MyModel <: AbstractGroundModel
     Cs::Float64
 end
 
-function GroundResponse._borehole_response(t, rb, xy, m::MyModel)
+function GroundResponse.gmatrix(t, rb, xy, m::MyModel)
     r = borefield_geometry(xy, rb)[1]          # nb×nb distance matrix
     return my_gfunc(t, r, m.ks, m.Cs)          # nt × nb × nb
 end
@@ -136,5 +144,5 @@ end
 
 ```@docs
 AbstractGroundModel
-ground_response
+gmatrix
 ```
